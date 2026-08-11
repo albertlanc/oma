@@ -1,19 +1,13 @@
 #!/bin/bash
-
-# Fetch dynamic system stats safely
 UPTIME=$(uptime -p | sed 's/up //')
 RAM_USAGE=$(free -m | awk 'NR==2{printf "%.1f%% (%sMB/%sMB)", $3*100/$2, $3, $2}')
-
-# Count active clients from Xray config safely
 CONFIG_FILE="/usr/local/etc/xray/config.json"
 if [ -f "$CONFIG_FILE" ] && command -v jq &> /dev/null; then
     VMESS_COUNT=$(jq '[.inbounds[] | select(.protocol=="vmess") | .settings.clients[]?] | length' "$CONFIG_FILE" 2>/dev/null || echo "0")
     VLESS_COUNT=$(jq '[.inbounds[] | select(.protocol=="vless") | .settings.clients[]?] | length' "$CONFIG_FILE" 2>/dev/null || echo "0")
     TROJAN_COUNT=$(jq '[.inbounds[] | select(.protocol=="trojan") | .settings.clients[]?] | length' "$CONFIG_FILE" 2>/dev/null || echo "0")
 else
-    VMESS_COUNT="0"
-    VLESS_COUNT="0"
-    TROJAN_COUNT="0"
+    VMESS_COUNT="0"; VLESS_COUNT="0"; TROJAN_COUNT="0"
 fi
 
 while true; do
@@ -49,7 +43,6 @@ while true; do
     echo -e "  \e[38;5;196m[00]\e[0m \e[31mExit Dashboard\e[0m"
     echo -e "\e[38;5;51m════════════════════════════════════════════════════════\e[0m"
     read -p " Select an option [00-10]: " option
-    
     case $option in
         01|1) /root/vpn-management-platform/modules/ssh_manager.sh ;;
         02|2) /root/vpn-management-platform/modules/vmess_manager.sh ;;
@@ -59,23 +52,9 @@ while true; do
         06|6) /root/vpn-management-platform/modules/backup.sh ;;
         07|7) /root/vpn-management-platform/modules/domain_ssl.sh ;;
         08|8) /root/vpn-management-platform/modules/check_running.sh ;;
-        09|9)
-            clear
-            echo -e "\e[33m[INFO] Running network speed test...\e[0m"
-            if ! command -v speedtest-cli &> /dev/null; then
-                apt-get install speedtest-cli -y >/dev/null 2>&1
-            fi
-            speedtest-cli
-            read -p "Press Enter to return to menu..."
-            ;;
-        10)
-            clear
-            echo -e "\e[33m[INFO] Restarting Xray and Nginx services...\e[0m"
-            systemctl restart xray nginx
-            echo -e "\e[32m[SUCCESS] Services restarted successfully!\e[0m"
-            sleep 1.5
-            ;;
-        00|0) clear; echo -e "\e[32mExiting Dashboard. Have a great day!\e[0m"; exit 0 ;;
-        *) echo -e "\e[31m[!] Invalid option. Please try again.\e[0m"; sleep 1.5 ;;
+        09|9) clear; echo -e "\e[33m[INFO] Running speed test...\e[0m"; speedtest-cli; read -p "Press Enter..." ;;
+        10) clear; echo -e "\e[33m[INFO] Restarting services...\e[0m"; systemctl restart xray nginx; sleep 1.5 ;;
+        00|0) clear; echo -e "\e[32mExiting...\e[0m"; exit 0 ;;
+        *) echo -e "\e[31m[!] Invalid option.\e[0m"; sleep 1.5 ;;
     esac
 done

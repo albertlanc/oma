@@ -120,7 +120,7 @@ echo "[INFO] Updating domain variable dynamically across module files..."
 find /root/vpn-management-platform/modules/ -type f -exec sed -i "s/vps.gregsmarty.co.uk/$DOMAIN/g" {} +
 
 echo "[INFO] Installing advanced V2.5 global 'menu' shortcut..."
-cat << 'MENUEXEC' > /usr/local/bin/menu
+cp /root/vpn-management-platform/menu.sh /usr/local/bin/menu
 #!/bin/bash
 UPTIME=\$(uptime -p | sed 's/up //')
 RAM_USAGE=\$(free -m | awk 'NR==2{printf "%.1f%% (%sMB/%sMB)", \$3*100/\$2, \$3, \$2}')
