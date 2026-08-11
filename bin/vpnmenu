@@ -1,0 +1,30 @@
+#!/bin/bash
+# Main VPN Dashboard Menu
+
+while true; do
+    clear
+    echo -e "\e[36m=================================================\e[0m"
+    echo -e "          VPN SERVER MANAGEMENT PLATFORM         "
+    echo -e "\e[36m=================================================\e[0m"
+    echo -e "  [01] SSH Manager"
+    echo -e "  [02] VMess Manager (In Development)"
+    echo -e "  [03] VLESS Manager (In Development)"
+    echo -e "  [04] Trojan Manager (In Development)"
+    echo -e "  [05] Settings (In Development)"
+    echo -e "  [06] Backup/Restore via Telegram"
+    echo -e "  [07] Domain & SSL (In Development)"
+    echo -e "  [08] Check Running Services (In Development)"
+    echo -e "  [00] Exit"
+    echo -e "\e[36m=================================================\e[0m"
+    read -p "Select an option [00-08]: " option
+
+    case $option in
+        01|1) /opt/vpn_platform/modules/ssh_manager.sh ;;
+        06|6) /opt/vpn_platform/modules/backup.sh ;;
+        00|0) clear; echo "Exiting Dashboard..."; exit 0 ;;
+        02|2|03|3|04|4|05|5|07|7|08|8) 
+            echo "Module currently in development. Check back later."
+            read -n 1 -s -r -p "Press any key to return to menu..." ;;
+        *) echo "Invalid option. Please try again."; sleep 2 ;;
+    esac
+done
