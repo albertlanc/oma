@@ -1,143 +1,135 @@
 #!/bin/bash
-# Advanced Domain & SSL Manager Module
+# Domain and SSL Manager
 
 DOMAIN_CONF="/opt/vpn_platform/domain.conf"
+mkdir -p /opt/vpn_platform
+mkdir -p /etc/xray
 
-load_domain() {
-    if [ -f "$DOMAIN_CONF" ]; then
-        source "$DOMAIN_CONF"
+install_dependencies() {
+    echo -e "\e[33mChecking dependencies (curl, socat, cron)...\e[0m"
+    apt-get update -y &>/dev/null
+    apt-get install curl socat cron ufw -y &>/dev/null
+    
+    if [ ! -d "/root/.acme.sh" ]; then
+        echo -e "\e[33mInstalling acme.sh for SSL management...\e[0m"
+        curl -sL https://get.acme.sh | sh &>/dev/null
     fi
 }
 
-save_domain() {
-    mkdir -p /opt/vpn_platform
-    echo "SERVER_DOMAIN=\"$SERVER_DOMAIN\"" > "$DOMAIN_CONF"
-    echo "NS1=\"$NS1\"" >> "$DOMAIN_CONF"
-    echo "NS2=\"$NS2\"" >> "$DOMAIN_CONF"
-}
-
-while true; do
-    load_domain
+point_domain() {
     clear
     echo -e "\e[36m=================================================\e[0m"
     echo -e "             DOMAIN & SSL MANAGER                "
     echo -e "\e[36m=================================================\e[0m"
-    echo -e "  Current Domain : ${SERVER_DOMAIN:-[ Not Set ]}"
-    echo -e "  Custom NS      : ${NS1:-N/A} / ${NS2:-N/A}"
-    echo -e "\e[36m-------------------------------------------------\e[0m"
-    echo -e "  [01] Add / Change Custom Domain"
-    echo -e "  [02] Add / Configure Custom Name Servers (NS)"
-    echo -e "  [03] Issue Standard Let's Encrypt SSL (HTTP-01)"
-    echo -e "  [04] Issue Wildcard SSL via Cloudflare DNS API"
-    echo -e "  [05] Configure Nginx Reverse Proxy & Map Domain"
-    echo -e "  [06] Audit SSL Expiry & Domain Health"
-    echo -e "  [07] Generate Self-Signed Emergency Fallback Cert"
-    echo -e "  [00] Back to Main Menu"
+    echo -e "Make sure your domain is already pointed to:"
+    echo -e "\e[32m$(hostname -I | awk '{print $1}')\e[0m"
     echo -e "\e[36m=================================================\e[0m"
-    read -p "Select an option [00-07]: " option
+    read -p "Enter your Domain/Subdomain : " domain
+    read -p "Enter your Name Server (NS) : " nameserver
+    
+    if [ -z "$domain" ]; then
+        echo -e "\e[31mDomain cannot be empty!\e[0m"
+        sleep 2
+        return
+    fi
 
-    case $option in
-        01|1)
-            read -p "Enter your custom domain (e.g., vpn.yourdomain.com): " SERVER_DOMAIN
-            save_domain
-            echo -e "\e[32m[SUCCESS] Domain saved as $SERVER_DOMAIN\e[0m"
-            ;;
-        02|2)
-            echo -e "\e[33mConfigure custom Name Servers (e.g., ns1.yourdomain.com pointing to server IP)\e[0m"
-            read -p "Enter Primary Name Server (NS1): " NS1
-            read -p "Enter Secondary Name Server (NS2): " NS2
-            save_domain
-            server_ip=$(hostname -I | awk '{print $1}')
-            echo -e "\e[32m[SUCCESS] Name servers recorded: $NS1, $NS2\e[0m"
-            echo -e "\e[33m[NOTE] Ensure you create glue records at your domain registrar pointing $NS1 and $NS2 to server IP: $server_ip\e[0m"
-            ;;
-        03|3)
-            if [ -z "$SERVER_DOMAIN" ]; then
-                echo -e "\e[31m[ERROR] Please add a custom domain first (Option 01).\e[0m"
-            else
-                read -p "Enter your email for Certbot registration: " email
-                systemctl stop nginx 2>/dev/null || true
-                certbot certonly --standalone --agree-tos --no-eff-email -d "$SERVER_DOMAIN" -m "$email"
-                systemctl start nginx 2>/dev/null || true
-                echo -e "\e[32m[SUCCESS] Certificate issuance attempt completed.\e[0m"
-            fi
-            ;;
-        04|4)
-            if [ -z "$SERVER_DOMAIN" ]; then
-                echo -e "\e[31m[ERROR] Please add a custom domain first (Option 01).\e[0m"
-            else
-                read -p "Enter Cloudflare Email: " cf_email
-                read -p "Enter Cloudflare Global API Key: " cf_key
-                mkdir -p ~/.secret
-                echo "dns_cloudflare_email = $cf_email" > ~/.secret/cloudflare.ini
-                echo "dns_cloudflare_api_key = $cf_key" >> ~/.secret/cloudflare.ini
-                chmod 600 ~/.secret/cloudflare.ini
-                
-                if ! dpkg -l | grep -q python3-certbot-dns-cloudflare; then
-                    apt-get update && apt-get install -y python3-certbot-dns-cloudflare &>/dev/null
-                fi
-                
-                certbot certonly --dns-cloudflare --dns-cloudflare-credentials ~/.secret/cloudflare.ini -d "$SERVER_DOMAIN" -d "*.$SERVER_DOMAIN" --agree-tos --no-eff-email -m "$cf_email"
-                echo -e "\e[32m[SUCCESS] Wildcard certificate requested via Cloudflare DNS API.\e[0m"
-            fi
-            ;;
-        05|5)
-            if [ -z "$SERVER_DOMAIN" ]; then
-                echo -e "\e[31m[ERROR] Please configure your domain first.\e[0m"
-            else
-                echo -e "\e[33mConfiguring Nginx reverse proxy server block for $SERVER_DOMAIN...\e[0m"
-                cat << NGINX_CONF > /etc/nginx/sites-available/vpn_proxy.conf
-server {
-    listen 80;
-    server_name $SERVER_DOMAIN;
-    return 301 https://\$host\$request_uri;
+    # 1. Save Domain and NS Globally
+    echo "SERVER_DOMAIN=\"$domain\"" > "$DOMAIN_CONF"
+    if [ -n "$nameserver" ]; then
+        echo "SERVER_NS=\"$nameserver\"" >> "$DOMAIN_CONF"
+    fi
+    echo -e "\e[32mData saved globally to $DOMAIN_CONF!\e[0m"
+    sleep 1
+
+    # 2. Install Dependencies
+    install_dependencies
+
+    # 3. Stop services that might block Port 80
+    echo -e "\e[33mStopping web services temporarily to free Port 80...\e[0m"
+    systemctl stop nginx &>/dev/null
+    systemctl stop xray &>/dev/null
+
+    # 4. Issue SSL Certificate (Only for the main domain)
+    echo -e "\e[33mIssuing SSL Certificate for $domain...\e[0m"
+    /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt &>/dev/null
+    /root/.acme.sh/acme.sh --issue -d "$domain" --standalone -k ec-256
+
+    # 5. Install Certificate
+    if [ $? -eq 0 ]; then
+        echo -e "\e[33mInstalling Certificate to /etc/xray/ ...\e[0m"
+        /root/.acme.sh/acme.sh --installcert -d "$domain" --fullchainpath /etc/xray/xray.crt --keypath /etc/xray/xray.key --ecc
+        chmod 644 /etc/xray/xray.crt /etc/xray/xray.key
+        
+        echo -e "\e[36m=================================================\e[0m"
+        echo -e "\e[32m          SSL CERTIFICATE SUCCESSFUL!            \e[0m"
+        echo -e "\e[36m=================================================\e[0m"
+        echo -e " Domain      : \e[32m$domain\e[0m"
+        if [ -n "$nameserver" ]; then
+            echo -e " Name Server : \e[32m$nameserver\e[0m"
+        fi
+        echo -e " Public Key  : \e[33m/etc/xray/xray.crt\e[0m"
+        echo -e " Private Key : \e[33m/etc/xray/xray.key\e[0m"
+        echo -e "\e[36m=================================================\e[0m"
+    else
+        echo -e "\e[36m=================================================\e[0m"
+        echo -e "\e[31m            SSL CERTIFICATE FAILED               \e[0m"
+        echo -e "\e[36m=================================================\e[0m"
+        echo -e "Please ensure your domain is strictly pointed to"
+        echo -e "this server's IP and Port 80 is open."
+    fi
+
+    # Restart services
+    systemctl start xray &>/dev/null
+    systemctl start nginx &>/dev/null
+    
+    read -n 1 -s -r -p "Press any key to return to Main Menu..."
 }
-server {
-    listen 443 ssl http2;
-    server_name $SERVER_DOMAIN;
 
-    ssl_certificate /etc/letsencrypt/live/$SERVER_DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$SERVER_DOMAIN/privkey.pem;
+while true; do
+    clear
+    echo -e "\e[36m=================================================\e[0m"
+    echo -e "             DOMAIN & SSL MANAGER                "
+    echo -e "\e[36m=================================================\e[0m"
+    
+    if [ -f "$DOMAIN_CONF" ]; then
+        source "$DOMAIN_CONF"
+        echo -e " Current Active Domain      : \e[32m${SERVER_DOMAIN:-None}\e[0m"
+        echo -e " Current Active Name Server : \e[32m${SERVER_NS:-None}\e[0m"
+    else
+        echo -e " Current Active Domain      : \e[31mNone (Using Server IP)\e[0m"
+        echo -e " Current Active Name Server : \e[31mNone\e[0m"
+    fi
+    
+    echo -e "\e[36m=================================================\e[0m"
+    echo -e "  [1] Input/Change Domain & Install SSL"
+    echo -e "  [2] Renew SSL Certificate Manually"
+    echo -e "  [0] Back to Main Menu"
+    echo -e "\e[36m=================================================\e[0m"
+    read -p "Select option [0-2]: " ssl_opt
 
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    location /vmess {
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:10001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    }
-}
-NGINX_CONF
-                ln -sf /etc/nginx/sites-available/vpn_proxy.conf /etc/nginx/sites-enabled/
-                rm -f /etc/nginx/sites-enabled/default
-                nginx -t && systemctl reload nginx
-                echo -e "\e[32m[SUCCESS] Nginx configured and reloaded with modern TLS 1.3 settings.\e[0m"
-            fi
+    case $ssl_opt in
+        1)
+            point_domain
             ;;
-        06|6)
-            if command -v certbot &> /dev/null; then
-                certbot certificates
+        2)
+            if [ -f "$DOMAIN_CONF" ]; then
+                source "$DOMAIN_CONF"
+                clear
+                echo -e "\e[33mForcing SSL Renewal for $SERVER_DOMAIN...\e[0m"
+                systemctl stop nginx &>/dev/null
+                systemctl stop xray &>/dev/null
+                /root/.acme.sh/acme.sh --renew -d "$SERVER_DOMAIN" --force --ecc
+                systemctl start xray &>/dev/null
+                systemctl start nginx &>/dev/null
+                echo -e "\e[32mRenewal process completed.\e[0m"
+                read -n 1 -s -r -p "Press any key to continue..."
             else
-                echo -e "\e[31m[INFO] Certbot not installed.\e[0m"
+                echo -e "\e[31mNo domain registered yet!\e[0m"
+                sleep 2
             fi
             ;;
-        07|7)
-            if [ -z "$SERVER_DOMAIN" ]; then
-                domain_name="server.local"
-            else
-                domain_name="$SERVER_DOMAIN"
-            fi
-            mkdir -p /etc/xray/ssl
-            openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/xray/ssl/private.key -out /etc/xray/ssl/cert.crt -subj "/CN=$domain_name"
-            echo -e "\e[32m[SUCCESS] Self-signed fallback certificate generated at /etc/xray/ssl/\e[0m"
+        0)
+            break
             ;;
-        00|0) break ;;
     esac
-    read -n 1 -s -r -p "Press any key to return..."
 done

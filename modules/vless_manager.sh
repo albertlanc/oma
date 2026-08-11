@@ -1,80 +1,79 @@
 #!/bin/bash
-# Advanced VLESS Manager Module (Reality/Vision Support & QR Codes)
+DOMAIN_CONF="/opt/vpn_platform/domain.conf"
+
+load_domain() {
+    if [ -f "$DOMAIN_CONF" ]; then source "$DOMAIN_CONF"; fi
+}
+get_server_ip() { hostname -I | awk '{print $1}'; }
 
 while true; do
+    load_domain
     clear
-    echo -e "\e[36m=================================================\e[0m"
-    echo -e "             ADVANCED VLESS MANAGER              "
-    echo -e "\e[36m=================================================\e[0m"
-    echo -e "  [01] Create VLESS Account (Reality/Vision)"
-    echo -e "  [02] Generate 24-Hour Trial VLESS"
-    echo -e "  [03] Bulk Create VLESS Accounts"
-    echo -e "  [04] Renew VLESS Account"
-    echo -e "  [05] Delete VLESS Account"
-    echo -e "  [06] List All VLESS Accounts"
-    echo -e "  [00] Back to Main Menu"
-    echo -e "\e[36m=================================================\e[0m"
-    read -p "Select an option [00-06]: " option
+    echo -e "\e[32m=================================================\e[0m"
+    echo -e "                 VLESS MANAGER                   "
+    echo -e "\e[32m=================================================\e[0m"
+    echo -e "  [1] Create VLESS Trial Account (24 Hours)"
+    echo -e "  [2] Create VLESS Permanent Account"
+    echo -e "  [3] Renew VLESS Account"
+    echo -e "  [4] Delete VLESS Account"
+    echo -e "  [0] Back to Main Menu"
+    echo -e "\e[32m=================================================\e[0m"
+    read -p "Select option [0-4]: " vless_sub
 
-    case $option in
-        01|1)
-            read -p "Enter username: " user
-            read -p "Enter active days: " days
-            uuid=$(cat /proc/sys/kernel/random/uuid)
+    server_ip=$(get_server_ip)
+    dom="${SERVER_DOMAIN:-$server_ip}"
+    uuid=$(cat /proc/sys/kernel/random/uuid)
+
+    case $vless_sub in
+        1)
+            clear
+            username="TRIAL-$(date +%s%N | cut -c11-14)"
+            exp_date="24 Hours (Trial)"
+            vless_tls="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=ws&path=%2Fvless#$username"
+            vless_upgrade="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=httpupgrade&path=%2Fvless-upgrade#$username"
+            vless_ntls="vless://$uuid@$dom:80?encryption=none&security=none&type=ws&path=%2Fvless#$username"
+            clear
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e "             TRIAL ACCOUNT CREATED                "
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " Remarks     : \e[32m$username\e[0m"
+            echo -e " Domain      : \e[33m$dom\e[0m"
+            echo -e " User ID     : \e[33m$uuid\e[0m"
+            echo -e " Expired On  : \e[31m$exp_date\e[0m"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " \e[36mLINK TLS :\e[0m\n$vless_tls"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " \e[36mLINK HTTP-UPGRADE (CloudFront Bypass) :\e[0m\n$vless_upgrade"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " \e[36mLINK NO-TLS :\e[0m\n$vless_ntls"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            read -n 1 -s -r -p "Press any key to back on menu"
+            ;;
+        2)
+            clear
+            read -p "Enter username: " username
+            read -p "Enter active duration in days: " days
             exp_date=$(date -d "+$days days" +"%Y-%m-%d")
-            
-            mkdir -p /opt/vpn_platform
-            echo "$user:$uuid:$exp_date:vless" >> /opt/vpn_platform/xray_users.db
-            
-            vless_link="vless://${uuid}@$(hostname -I | awk '{print $1}'):443?encryption=none&security=reality&sni=yahoo.com&fp=chrome&type=tcp&flow=xtls-rprx-vision#${user}-VLESS"
-            
-            echo -e "\e[32m[SUCCESS] VLESS Account Created!\e[0m"
-            echo "Username : $user"
-            echo "UUID     : $uuid"
-            echo "Expires  : $exp_date"
-            echo -e "\nLink:\n$vless_link"
-            if command -v qrencode &> /dev/null; then
-                echo -e "\nQR Code:"
-                qrencode -t ansiutf8 "$vless_link"
-            fi
+            vless_tls="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=ws&path=%2Fvless#$username"
+            vless_upgrade="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=httpupgrade&path=%2Fvless-upgrade#$username"
+            vless_ntls="vless://$uuid@$dom:80?encryption=none&security=none&type=ws&path=%2Fvless#$username"
+            clear
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e "           PERMANENT ACCOUNT CREATED              "
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " Remarks     : \e[32m$username\e[0m"
+            echo -e " Domain      : \e[33m$dom\e[0m"
+            echo -e " User ID     : \e[33m$uuid\e[0m"
+            echo -e " Expired On  : \e[31m$exp_date\e[0m"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " \e[36mLINK TLS :\e[0m\n$vless_tls"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " \e[36mLINK HTTP-UPGRADE (CloudFront Bypass) :\e[0m\n$vless_upgrade"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo -e " \e[36mLINK NO-TLS :\e[0m\n$vless_ntls"
+            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            read -n 1 -s -r -p "Press any key to back on menu"
             ;;
-        02|2)
-            user="trial_vless_$(tr -dc 'a-z0-9' < /dev/urandom | head -c 4)"
-            uuid=$(cat /proc/sys/kernel/random/uuid)
-            exp_date=$(date -d "+1 days" +"%Y-%m-%d")
-            echo "$user:$uuid:$exp_date:vless" >> /opt/vpn_platform/xray_users.db
-            echo -e "\e[32m[SUCCESS] Trial VLESS Created: $user\e[0m"
-            ;;
-        03|3)
-            read -p "Enter base username: " base
-            read -p "How many accounts? " count
-            read -p "Active days: " days
-            exp_date=$(date -d "+$days days" +"%Y-%m-%d")
-            for i in $(seq 1 "$count"); do
-                user="${base}${i}"
-                uuid=$(cat /proc/sys/kernel/random/uuid)
-                echo "$user:$uuid:$exp_date:vless" >> /opt/vpn_platform/xray_users.db
-                echo "Created: $user"
-            done
-            echo -e "\e[32m[SUCCESS] Bulk creation complete.\e[0m"
-            ;;
-        04|4)
-            read -p "Enter username to renew: " user
-            read -p "Add how many days? " days
-            new_exp=$(date -d "+$days days" +"%Y-%m-%d")
-            sed -i "/^$user:.*:vless/ s/:[0-9-]\{10\}:/:$new_exp:/" /opt/vpn_platform/xray_users.db
-            echo -e "\e[32m[SUCCESS] Account $user renewed until $new_exp.\e[0m"
-            ;;
-        05|5)
-            read -p "Enter username to delete: " user
-            sed -i "/^$user:.*:vless/d" /opt/vpn_platform/xray_users.db
-            echo -e "\e[32m[SUCCESS] Account $user removed.\e[0m"
-            ;;
-        06|6)
-            echo -e "\e[33mActive VLESS Accounts:\e[0m"
-            grep ":vless:" /opt/vpn_platform/xray_users.db 2>/dev/null | awk -F':' '{print "User: " $1 " | Expires: " $3}'
-            ;;
-        00|0) break ;;
+        0) break ;;
     esac
-    read -n 1 -s -r -p "Press any key to continue..."
 done

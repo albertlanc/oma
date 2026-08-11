@@ -1,6 +1,5 @@
 #!/bin/bash
 # Advanced SSH Manager Module with Numbered Selection Sub-Menus
-
 DOMAIN_CONF="/opt/vpn_platform/domain.conf"
 LIMITS_CONF="/opt/vpn_platform/ssh_limits.conf"
 
@@ -42,7 +41,6 @@ while true; do
     echo -e "  [00] Back to Main Menu"
     echo -e "\e[36m=================================================\e[0m"
     read -p "Select an option [00-11]: " option
-
     case $option in
         01|1)
             clear
@@ -51,7 +49,6 @@ while true; do
             read -p "Enter password: " password
             read -p "Enter Max Login (concurrent limit): " max_login
             read -p "Enter active duration in days: " days
-
             if id "$username" &>/dev/null; then
                 echo -e "\e[31m[ERROR] User already exists!\e[0m"
             else
@@ -59,23 +56,18 @@ while true; do
                 current_epoch=$(date +%s)
                 exp_epoch=$(date -d "$exp_date" +%s)
                 days_remaining=$(( (exp_epoch - current_epoch) / 86400 ))
-
                 useradd -e "$exp_date" -M -s /bin/false "$username"
                 echo "$username:$password" | chpasswd
-
                 mkdir -p /opt/vpn_platform
                 sed -i "/^$username:/d" "$LIMITS_CONF" 2>/dev/null
                 echo "$username:$max_login" >> "$LIMITS_CONF"
-
                 server_ip=$(hostname -I | awk '{print $1}')
                 dom="${SERVER_DOMAIN:-$server_ip}"
-                ns="${NS1:-ns1.yourdomain.com}"
-                
+                ns="${SERVER_NS:-${NS1:-Not Set}}"
                 slowdns_pub="Not Generated"
                 if [ -f "/etc/slowdns/server.pub" ]; then
                     slowdns_pub=$(cat /etc/slowdns/server.pub)
                 fi
-
                 clear
                 echo -e "\e[36m=================================================\e[0m"
                 echo -e "          SSH ACCOUNT CREATED SUCCESSFULLY       "
@@ -114,7 +106,6 @@ while true; do
             echo -e "\e[33m=== RENEW SSH ACCOUNT ===\e[0m"
             echo -e " No. | Username         | Current Expiration"
             echo -e "-------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No custom user accounts found on this system.\e[0m"
@@ -127,13 +118,11 @@ while true; do
                 done
                 echo -e "-------------------------------------------------"
                 read -p "Select account number or type username to renew: " selection
-                
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#users[@]}" ]; then
                     username="${users[$((selection - 1))]}"
                 else
                     username="$selection"
                 fi
-
                 if id "$username" &>/dev/null; then
                     read -p "Add how many days to extend? " days
                     current_exp_raw=$(chage -l "$username" | grep "Account expires" | cut -d: -f2 | xargs)
@@ -161,7 +150,6 @@ while true; do
             echo -e "\e[33m=== CHANGE SSH PASSWORD ===\e[0m"
             echo -e " No. | Username         | Current Expiration"
             echo -e "-------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No custom user accounts found on this system.\e[0m"
@@ -174,13 +162,11 @@ while true; do
                 done
                 echo -e "-------------------------------------------------"
                 read -p "Select account number or type username to change password: " selection
-                
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#users[@]}" ]; then
                     username="${users[$((selection - 1))]}"
                 else
                     username="$selection"
                 fi
-
                 if id "$username" &>/dev/null; then
                     read -p "Enter new password for $username: " password
                     echo "$username:$password" | chpasswd
@@ -195,7 +181,6 @@ while true; do
             echo -e "\e[33m=== SUSPEND / LOCK SSH ACCOUNT ===\e[0m"
             echo -e " No. | Username         | Current Expiration"
             echo -e "-------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No custom user accounts found on this system.\e[0m"
@@ -208,13 +193,11 @@ while true; do
                 done
                 echo -e "-------------------------------------------------"
                 read -p "Select account number or type username to suspend: " selection
-                
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#users[@]}" ]; then
                     username="${users[$((selection - 1))]}"
                 else
                     username="$selection"
                 fi
-
                 if id "$username" &>/dev/null; then
                     usermod -L "$username"
                     pkill -u "$username" 2>/dev/null
@@ -229,7 +212,6 @@ while true; do
             echo -e "\e[33m=== UNSUSPEND / UNLOCK SSH ACCOUNT ===\e[0m"
             echo -e " No. | Username         | Current Expiration"
             echo -e "-------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No custom user accounts found on this system.\e[0m"
@@ -242,13 +224,11 @@ while true; do
                 done
                 echo -e "-------------------------------------------------"
                 read -p "Select account number or type username to unsuspend: " selection
-                
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#users[@]}" ]; then
                     username="${users[$((selection - 1))]}"
                 else
                     username="$selection"
                 fi
-
                 if id "$username" &>/dev/null; then
                     usermod -U "$username"
                     echo -e "\e[32m[SUCCESS] Account $username has been unlocked.\e[0m"
@@ -262,7 +242,6 @@ while true; do
             echo -e "\e[33m=== DELETE SSH ACCOUNT ===\e[0m"
             echo -e " No. | Username         | Current Expiration"
             echo -e "-------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No custom user accounts found on this system.\e[0m"
@@ -275,13 +254,11 @@ while true; do
                 done
                 echo -e "-------------------------------------------------"
                 read -p "Select account number or type username to delete: " selection
-                
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#users[@]}" ]; then
                     username="${users[$((selection - 1))]}"
                 else
                     username="$selection"
                 fi
-
                 if id "$username" &>/dev/null; then
                     read -p "Purge home directory/mail as well? [y/N]: " purge_home
                     if [[ "$purge_home" =~ ^[Yy]$ ]]; then
@@ -301,7 +278,6 @@ while true; do
             echo -e "\e[33m=== CHECK ACTIVE MULTI-LOGIN SESSIONS ===\e[0m"
             echo -e " No. | Username         | Max Limit | Active Conn | Status"
             echo -e "-------------------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No custom user accounts found on this system.\e[0m"
@@ -311,7 +287,6 @@ while true; do
                     num=$((i + 1))
                     max_l=$(get_user_limit "$u")
                     active_conn=$(ps -u "$u" 2>/dev/null | grep -E "sshd|dropbear" | wc -l)
-                    
                     if [ "$active_conn" -gt "$max_l" ]; then
                         status="\e[31mEXCEEDED\e[0m"
                     elif [ "$active_conn" -gt 0 ]; then
@@ -331,7 +306,6 @@ while true; do
             echo -e "-------------------------------------------------------------"
             echo -e " Username         | Limit | Active | Action Taken"
             echo -e "-------------------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No accounts to enforce.\e[0m"
@@ -340,7 +314,6 @@ while true; do
                 for u in "${users[@]}"; do
                     max_l=$(get_user_limit "$u")
                     active_conn=$(ps -u "$u" 2>/dev/null | grep -E "sshd|dropbear" | wc -l)
-                    
                     if [ "$active_conn" -gt "$max_l" ]; then
                         pkill -u "$u" sshd 2>/dev/null
                         pkill -u "$u" dropbear 2>/dev/null
@@ -362,7 +335,6 @@ while true; do
             read -p "Enter max login (concurrent device limit): " max_login
             read -p "Enter active duration in days: " days
             read -p "Enter number of accounts to generate: " count
-
             if [ -z "$base_user" ] || [ -z "$password" ] || [ -z "$count" ]; then
                 echo -e "\e[31m[ERROR] All fields are required!\e[0m"
             else
@@ -373,7 +345,6 @@ while true; do
                 echo -e "\e[36m=================================================\e[0m"
                 echo -e " No. | Username         | Password    | Limit | Expires"
                 echo -e "-------------------------------------------------"
-                
                 mkdir -p /opt/vpn_platform
                 success_count=0
                 for i in $(seq 1 "$count"); do
@@ -398,7 +369,6 @@ while true; do
             echo -e "\e[33m=== VIEW USER SESSION HISTORY (IP LOGS) ===\e[0m"
             echo -e " No. | Username         | Current Expiration"
             echo -e "-------------------------------------------------"
-            
             users=($(awk -F: '$3 >= 1000 {print $1}' /etc/passwd))
             if [ ${#users[@]} -eq 0 ]; then
                 echo -e "\e[31m[INFO] No custom user accounts found on this system.\e[0m"
@@ -411,13 +381,11 @@ while true; do
                 done
                 echo -e "-------------------------------------------------"
                 read -p "Select account number or type username to view logs: " selection
-                
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#users[@]}" ]; then
                     username="${users[$((selection - 1))]}"
                 else
                     username="$selection"
                 fi
-
                 if id "$username" &>/dev/null; then
                     clear
                     echo -e "\e[36m=================================================\e[0m"
@@ -467,7 +435,7 @@ while true; do
         00|0)
             break
             ;;
-        *) 
+        *)
             echo "Invalid option."
             sleep 1
             ;;
