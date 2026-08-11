@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Ensure script is run as root
 if [ "$EUID" -ne 0 ]; then
   echo "[ERROR] Please run this script as root (sudo -i)."
   exit 1
@@ -20,7 +19,7 @@ fi
 
 echo "[INFO] Updating package lists and installing dependencies..."
 apt-get update -y
-apt-get install -y curl wget jq nginx certbot
+apt-get install -y curl wget jq nginx certbot speedtest-cli
 
 echo "[INFO] Installing official Xray core..."
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
@@ -78,79 +77,41 @@ cat << NGINXCONF > /etc/nginx/conf.d/vpn_xray.conf
 server {
     listen 80;
     server_name $DOMAIN;
-
     location /vmess-ntls {
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:10004;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_redirect off; proxy_pass http://127.0.0.1:10004; proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
-
     location /vless-ntls {
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:10005;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_redirect off; proxy_pass http://127.0.0.1:10005; proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
-
     location /xhttp {
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:10006;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_redirect off; proxy_pass http://127.0.0.1:10006; proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
 }
-
 server {
     listen 443 ssl http2;
     server_name $DOMAIN;
-
     ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
-
     location /vmess {
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:10001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_redirect off; proxy_pass http://127.0.0.1:10001; proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
-
     location /vless {
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:10002;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_redirect off; proxy_pass http://127.0.0.1:10002; proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
-
     location /trojan {
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:10003;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_redirect off; proxy_pass http://127.0.0.1:10003; proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     }
 }
 NGINXCONF
@@ -158,27 +119,54 @@ NGINXCONF
 echo "[INFO] Updating domain variable dynamically across module files..."
 find /root/vpn-management-platform/modules/ -type f -exec sed -i "s/vps.gregsmarty.co.uk/$DOMAIN/g" {} +
 
-echo "[INFO] Installing global 'menu' shortcut..."
+echo "[INFO] Installing advanced V2.5 global 'menu' shortcut..."
 cat << 'MENUEXEC' > /usr/local/bin/menu
 #!/bin/bash
-# Main VPN Dashboard Menu
+UPTIME=\$(uptime -p | sed 's/up //')
+RAM_USAGE=\$(free -m | awk 'NR==2{printf "%.1f%% (%sMB/%sMB)", \$3*100/\$2, \$3, \$2}')
+CONFIG_FILE="/usr/local/etc/xray/config.json"
+if [ -f "\$CONFIG_FILE" ] && command -v jq &> /dev/null; then
+    VMESS_COUNT=\$(jq '[.inbounds[] | select(.protocol=="vmess") | .settings.clients[]?] | length' "\$CONFIG_FILE" 2>/dev/null || echo "0")
+    VLESS_COUNT=\$(jq '[.inbounds[] | select(.protocol=="vless") | .settings.clients[]?] | length' "\$CONFIG_FILE" 2>/dev/null || echo "0")
+    TROJAN_COUNT=\$(jq '[.inbounds[] | select(.protocol=="trojan") | .settings.clients[]?] | length' "\$CONFIG_FILE" 2>/dev/null || echo "0")
+else
+    VMESS_COUNT="0"; VLESS_COUNT="0"; TROJAN_COUNT="0"
+fi
+
 while true; do
     clear
-    echo -e "\e[36m=================================================\e[0m"
-    echo -e "          VPN SERVER MANAGEMENT PLATFORM         "
-    echo -e "\e[36m=================================================\e[0m"
-    echo -e "  [01] SSH Manager"
-    echo -e "  [02] VMess Manager"
-    echo -e "  [03] VLESS Manager"
-    echo -e "  [04] Trojan Manager"
-    echo -e "  [05] Settings & Optimization"
-    echo -e "  [06] Backup/Restore via Telegram"
-    echo -e "  [07] Domain & SSL Manager"
-    echo -e "  [08] Check Running Services"
-    echo -e "  [00] Exit"
-    echo -e "\e[36m=================================================\e[0m"
-    read -p "Select an option [00-08]: " option
-    case $option in
+    echo -e "\e[38;5;51m╔════════════════════════════════════════════════════════╗\e[0m"
+    echo -e "\e[38;5;51m║\e[0m \e[1m\e[38;5;214m        VPN SERVER MANAGEMENT PLATFORM V2.5             \e[0m\e[38;5;51m║\e[0m"
+    echo -e "\e[38;5;51m╚════════════════════════════════════════════════════════╝\e[0m"
+    echo -e " \e[38;5;244m•\e[0m \e[1mHost:\e[0m \$(hostname -I | awk '{print \$1}')  \e[38;5;244m•\e[0m \e[1mUptime:\e[0m \$UPTIME"
+    echo -e " \e[38;5;244m•\e[0m \e[1mRAM:\e[0m  \$RAM_USAGE"
+    echo -e " \e[38;5;51m──────────────────────────────────────────────────────────\e[0m"
+    echo -e " \e[38;5;46m📊 Active Accounts\e[0m -> VMess: \e[33m\$VMESS_COUNT\e[0m | VLESS: \e[33m\$VLESS_COUNT\e[0m | Trojan: \e[33m\$TROJAN_COUNT\e[0m"
+    echo -e " \e[38;5;51m──────────────────────────────────────────────────────────\e[0m"
+    echo -e "  \e[38;5;51m[01]\e[0m \e[36mSSH Manager\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;51m[02]\e[0m \e[36mVMess Manager\e[0m   \e[38;5;240m(TLS / Non-TLS)\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;51m[03]\e[0m \e[36mVLESS Manager\e[0m   \e[38;5;240m(TLS / Non-TLS / XHTTP)\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;51m[04]\e[0m \e[36mProjan Manager\e[0m  \e[38;5;240m(Secure Proxy)\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;51m[05]\e[0m \e[36mSettings & Optimization\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;51m[06]\e[0m \e[36mBackup/Restore via Telegram\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;51m[07]\e[0m \e[36mDomain & SSL Manager\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;51m[08]\e[0m \e[36mCheck Running Services\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;220m[09]\e[0m \e[33mRun Server Speed Test\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;220m[10]\e[0m \e[33mQuick Restart Xray & Nginx\e[0m"
+    echo -e ""
+    echo -e "  \e[38;5;196m[00]\e[0m \e[31mExit Dashboard\e[0m"
+    echo -e "\e[38;5;51m════════════════════════════════════════════════════════\e[0m"
+    read -p " Select an option [00-10]: " option
+    case \$option in
         01|1) /root/vpn-management-platform/modules/ssh_manager.sh ;;
         02|2) /root/vpn-management-platform/modules/vmess_manager.sh ;;
         03|3) /root/vpn-management-platform/modules/vless_manager.sh ;;
@@ -187,24 +175,18 @@ while true; do
         06|6) /root/vpn-management-platform/modules/backup.sh ;;
         07|7) /root/vpn-management-platform/modules/domain_ssl.sh ;;
         08|8) /root/vpn-management-platform/modules/check_running.sh ;;
-        00|0) clear; echo "Exiting Dashboard..."; exit 0 ;;
-        *) echo "Invalid option. Please try again."; sleep 2 ;;
+        09|9) clear; echo -e "\e[33m[INFO] Running speed test...\e[0m"; speedtest-cli; read -p "Press Enter..." ;;
+        10) clear; echo -e "\e[33m[INFO] Restarting services...\e[0m"; systemctl restart xray nginx; sleep 1.5 ;;
+        00|0) clear; echo -e "\e[32mExiting...\e[0m"; exit 0 ;;
+        *) echo -e "\e[31m[!] Invalid option.\e[0m"; sleep 1.5 ;;
     esac
 done
 MENUEXEC
 
 chmod +x /usr/local/bin/menu
-chmod -R +x /root/vpn-management-platform/modules/
 
-echo "[INFO] Restarting and enabling services..."
+echo "[INFO] Restarting services..."
 systemctl daemon-reload
 systemctl enable xray nginx
 systemctl restart xray nginx
-
-echo ""
-echo "=========================================="
-echo "      INSTALLATION COMPLETED SUCCESSFULLY! "
-echo "=========================================="
-echo " Type 'menu' anywhere in your terminal"
-echo " to open your VPN management platform."
-echo "=========================================="
+echo "INSTALL COMPLETE!"
