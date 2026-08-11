@@ -10,9 +10,9 @@ while true; do
     echo -e "  [02] VMess Manager"
     echo -e "  [03] VLESS Manager"
     echo -e "  [04] Trojan Manager"
-    echo -e "  [05] Settings (In Development)"
+    echo -e "  [05] Settings & Optimization"
     echo -e "  [06] Backup/Restore via Telegram"
-    echo -e "  [07] Domain & SSL (In Development)"
+    echo -e "  [07] Domain & SSL Manager"
     echo -e "  [08] Check Running Services"
     echo -e "  [00] Exit"
     echo -e "\e[36m=================================================\e[0m"
@@ -23,12 +23,11 @@ while true; do
         02|2) /root/vpn-management-platform/modules/vmess_manager.sh ;;
         03|3) /root/vpn-management-platform/modules/vless_manager.sh ;;
         04|4) /root/vpn-management-platform/modules/trojan_manager.sh ;;
+        05|5) /root/vpn-management-platform/modules/settings.sh ;;
         06|6) /root/vpn-management-platform/modules/backup.sh ;;
+        07|7) /root/vpn-management-platform/modules/domain_ssl.sh ;;
         08|8) /root/vpn-management-platform/modules/check_running.sh ;;
         00|0) clear; echo "Exiting Dashboard..."; exit 0 ;;
-        05|5|07|7) 
-            echo "Module currently in development. Check back later."
-            read -n 1 -s -r -p "Press any key to return to menu..." ;;
         *) echo "Invalid option. Please try again."; sleep 2 ;;
     esac
 done
