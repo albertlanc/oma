@@ -1,79 +1,82 @@
 #!/bin/bash
-DOMAIN_CONF="/opt/vpn_platform/domain.conf"
-
-load_domain() {
-    if [ -f "$DOMAIN_CONF" ]; then source "$DOMAIN_CONF"; fi
-}
-get_server_ip() { hostname -I | awk '{print $1}'; }
-
 while true; do
-    load_domain
     clear
-    echo -e "\e[32m=================================================\e[0m"
-    echo -e "                 VLESS MANAGER                   "
-    echo -e "\e[32m=================================================\e[0m"
-    echo -e "  [1] Create VLESS Trial Account (24 Hours)"
-    echo -e "  [2] Create VLESS Permanent Account"
-    echo -e "  [3] Renew VLESS Account"
-    echo -e "  [4] Delete VLESS Account"
-    echo -e "  [0] Back to Main Menu"
-    echo -e "\e[32m=================================================\e[0m"
-    read -p "Select option [0-4]: " vless_sub
+    echo "=========================================="
+    echo "            VLESS MANAGER                 "
+    echo "=========================================="
+    echo "  [1] Create VLESS Account (TLS)"
+    echo "  [2] Create VLESS Account (Non-TLS)"
+    echo "  [3] Create VLESS Account (XHTTP)"
+    echo "  [4] Create VLESS Trial (TLS)"
+    echo "  [5] Delete VLESS Account"
+    echo "  [0] Return to Main Menu"
+    echo "=========================================="
+    read -p "Select an option [0-5]: " subopt
 
-    server_ip=$(get_server_ip)
-    dom="${SERVER_DOMAIN:-$server_ip}"
-    uuid=$(cat /proc/sys/kernel/random/uuid)
+    case $subopt in
+        1|01)
+            clear
+            echo "=== CREATE VLESS (TLS) ==="
+            read -p "Enter Client Username: " USERNAME
+            DOMAIN="vps.gregsmarty.co.uk"
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
+            CONFIG_FILE="/usr/local/etc/xray/config.json"
 
-    case $vless_sub in
-        1)
-            clear
-            username="TRIAL-$(date +%s%N | cut -c11-14)"
-            exp_date="24 Hours (Trial)"
-            vless_tls="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=ws&path=%2Fvless#$username"
-            vless_upgrade="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=httpupgrade&path=%2Fvless-upgrade#$username"
-            vless_ntls="vless://$uuid@$dom:80?encryption=none&security=none&type=ws&path=%2Fvless#$username"
-            clear
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e "             TRIAL ACCOUNT CREATED                "
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " Remarks     : \e[32m$username\e[0m"
-            echo -e " Domain      : \e[33m$dom\e[0m"
-            echo -e " User ID     : \e[33m$uuid\e[0m"
-            echo -e " Expired On  : \e[31m$exp_date\e[0m"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " \e[36mLINK TLS :\e[0m\n$vless_tls"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " \e[36mLINK HTTP-UPGRADE (CloudFront Bypass) :\e[0m\n$vless_upgrade"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " \e[36mLINK NO-TLS :\e[0m\n$vless_ntls"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            read -n 1 -s -r -p "Press any key to back on menu"
+            jq --arg id "$NEW_UUID" '(.inbounds[] | select(.protocol == "vless" and .port == 10002)).settings.clients += [{"id": $id}]' "$CONFIG_FILE" > /tmp/x.json && mv /tmp/x.json "$CONFIG_FILE"
+            systemctl restart xray
+            LINK="vless://$NEW_UUID@$DOMAIN:443?type=ws&security=tls&path=%2Fvless&host=$DOMAIN#$USERNAME"
+            echo -e "\nSUCCESS!\nLink: $LINK"
+            read -p "Press Enter..."
             ;;
-        2)
+        2|02)
             clear
-            read -p "Enter username: " username
-            read -p "Enter active duration in days: " days
-            exp_date=$(date -d "+$days days" +"%Y-%m-%d")
-            vless_tls="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=ws&path=%2Fvless#$username"
-            vless_upgrade="vless://$uuid@$dom:443?encryption=none&security=tls&sni=$dom&type=httpupgrade&path=%2Fvless-upgrade#$username"
-            vless_ntls="vless://$uuid@$dom:80?encryption=none&security=none&type=ws&path=%2Fvless#$username"
-            clear
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e "           PERMANENT ACCOUNT CREATED              "
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " Remarks     : \e[32m$username\e[0m"
-            echo -e " Domain      : \e[33m$dom\e[0m"
-            echo -e " User ID     : \e[33m$uuid\e[0m"
-            echo -e " Expired On  : \e[31m$exp_date\e[0m"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " \e[36mLINK TLS :\e[0m\n$vless_tls"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " \e[36mLINK HTTP-UPGRADE (CloudFront Bypass) :\e[0m\n$vless_upgrade"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo -e " \e[36mLINK NO-TLS :\e[0m\n$vless_ntls"
-            echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            read -n 1 -s -r -p "Press any key to back on menu"
+            echo "=== CREATE VLESS (NON-TLS) ==="
+            read -p "Enter Client Username: " USERNAME
+            DOMAIN="vps.gregsmarty.co.uk"
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
+            CONFIG_FILE="/usr/local/etc/xray/config.json"
+
+            jq --arg id "$NEW_UUID" '(.inbounds[] | select(.protocol == "vless" and .port == 10005)).settings.clients += [{"id": $id}]' "$CONFIG_FILE" > /tmp/x.json && mv /tmp/x.json "$CONFIG_FILE"
+            systemctl restart xray
+            LINK="vless://$NEW_UUID@$DOMAIN:80?type=ws&security=none&path=%2Fvless-ntls&host=$DOMAIN#$USERNAME"
+            echo -e "\nSUCCESS!\nLink: $LINK"
+            read -p "Press Enter..."
             ;;
-        0) break ;;
+        3|03)
+            clear
+            echo "=== CREATE VLESS (XHTTP) ==="
+            read -p "Enter Client Username: " USERNAME
+            DOMAIN="vps.gregsmarty.co.uk"
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
+            CONFIG_FILE="/usr/local/etc/xray/config.json"
+
+            jq --arg id "$NEW_UUID" '(.inbounds[] | select(.protocol == "vless" and .port == 10006)).settings.clients += [{"id": $id}]' "$CONFIG_FILE" > /tmp/x.json && mv /tmp/x.json "$CONFIG_FILE"
+            systemctl restart xray
+            LINK="vless://$NEW_UUID@$DOMAIN:80?type=xhttp&security=none&path=%2Fxhttp&host=$DOMAIN#$USERNAME"
+            echo -e "\nSUCCESS!\nLink: $LINK"
+            read -p "Press Enter..."
+            ;;
+        4|04)
+            clear
+            USERNAME="TRIAL-$(tr -dc A-Z0-9 </dev/urandom | head -c 4)"
+            DOMAIN="vps.gregsmarty.co.uk"
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
+            CONFIG_FILE="/usr/local/etc/xray/config.json"
+
+            jq --arg id "$NEW_UUID" '(.inbounds[] | select(.protocol == "vless" and .port == 10002)).settings.clients += [{"id": $id}]' "$CONFIG_FILE" > /tmp/x.json && mv /tmp/x.json "$CONFIG_FILE"
+            systemctl restart xray
+            LINK="vless://$NEW_UUID@$DOMAIN:443?type=ws&security=tls&path=%2Fvless&host=$DOMAIN#$USERNAME"
+            echo -e "\nTRIAL CREATED (TLS)!\nUsername: $USERNAME\nLink: $LINK"
+            read -p "Press Enter..."
+            ;;
+        5|05)
+            clear
+            read -p "Enter UUID to delete: " DEL_UUID
+            jq --arg id "$DEL_UUID" '(.inbounds[] | select(.protocol == "vless")).settings.clients |= map(select(.id != $id))' /usr/local/etc/xray/config.json > /tmp/x.json && mv /tmp/x.json /usr/local/etc/xray/config.json
+            systemctl restart xray
+            echo "Deleted if found."
+            read -p "Press Enter..."
+            ;;
+        0|00) break ;;
     esac
 done
