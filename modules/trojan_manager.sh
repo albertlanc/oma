@@ -4,86 +4,74 @@ while true; do
     echo "=========================================="
     echo "            TROJAN MANAGER                "
     echo "=========================================="
-    echo "  [1] Create Trojan Account (Standard)"
-    echo "  [2] Create Trojan Trial Account"
+    echo "  [1] Create Trojan Account (TLS)"
+    echo "  [2] Create Trojan Trial (TLS)"
     echo "  [3] Delete Trojan Account"
     echo "  [0] Return to Main Menu"
     echo "=========================================="
     read -p "Select an option [0-3]: " subopt
-
     case $subopt in
         1|01)
             clear
-            echo "=== CREATE TROJAN ACCOUNT ==="
+            echo "=== CREATE TROJAN (TLS) ==="
             read -p "Enter Client Username: " USERNAME
+            read -p "Enter Duration (Days) [default: 30]: " EXP
+            [[ -z "$EXP" || ! "$EXP" =~ ^[0-9]+$ ]] && EXP=30
+            EXP_DATE=$(date -d "+$EXP days" +"%Y-%m-%d")
+            
             DOMAIN="vps.gregsmarty.co.uk"
-            PASSWORD="trj-$(openssl rand -hex 4)"
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid | cut -d'-' -f1-3)
             CONFIG_FILE="/usr/local/etc/xray/config.json"
-
-            jq --arg pass "$PASSWORD" \
-               '(.inbounds[] | select(.protocol == "trojan")).settings.clients += [{"password": $pass}]' \
-               "$CONFIG_FILE" > /tmp/xray_temp.json
-
-            if xray run -test -config /tmp/xray_temp.json >/dev/null 2>&1; then
-                mv /tmp/xray_temp.json "$CONFIG_FILE"
-                systemctl restart xray
-                LINK="trojan://$PASSWORD@$DOMAIN:443?type=ws&security=tls&path=%2Ftrojan&host=$DOMAIN#$USERNAME"
-                echo ""
-                echo "SUCCESSFULLY CREATED!"
-                echo "Password: $PASSWORD"
-                echo "Link: $LINK"
-            else
-                echo "[ERROR] Failed to update config."
-                rm -f /tmp/xray_temp.json
-            fi
-            read -p "Press Enter to continue..."
+            
+            jq --arg pass "$NEW_UUID" --arg email "$USERNAME" '(.inbounds[] | select(.protocol == "trojan" and .port == 10003)).settings.clients += [{"password": $pass, "email": $email}]' "$CONFIG_FILE" > /tmp/x.json && mv /tmp/x.json "$CONFIG_FILE"
+            systemctl restart xray
+            
+            echo "$USERNAME | $NEW_UUID | $EXP_DATE | trojan" >> /etc/xray/clients.db
+            LINK="trojan://${NEW_UUID}@${DOMAIN}:443?path=%2Ftrojan&security=tls&type=ws&sni=${DOMAIN}#${USERNAME}"
+            
+            echo -e "\n\e[32mSUCCESS! TROJAN CREATED\e[0m"
+            echo -e " \e[33m• Username :\e[0m $USERNAME"
+            echo -e " \e[33m• Password :\e[0m $NEW_UUID"
+            echo -e " \e[33m• Expiry   :\e[0m $EXP_DATE ($EXP Days)"
+            echo -e "\e[36m--------------------------------------------------\e[0m"
+            echo -e " \e[32mLink:\e[0m\n$LINK"
+            echo -e "\e[36m--------------------------------------------------\e[0m"
+            read -p "Press Enter..."
             ;;
         2|02)
             clear
-            echo "=== CREATE TROJAN TRIAL ACCOUNT ==="
+            echo "=== CREATE TROJAN TRIAL (TLS) ==="
             USERNAME="TRIAL-$(tr -dc A-Z0-9 </dev/urandom | head -c 4)"
+            EXP=1
+            EXP_DATE=$(date -d "+$EXP days" +"%Y-%m-%d")
+            
             DOMAIN="vps.gregsmarty.co.uk"
-            PASSWORD="trj-$(openssl rand -hex 4)"
+            NEW_UUID=$(cat /proc/sys/kernel/random/uuid | cut -d'-' -f1-3)
             CONFIG_FILE="/usr/local/etc/xray/config.json"
-
-            jq --arg pass "$PASSWORD" \
-               '(.inbounds[] | select(.protocol == "trojan")).settings.clients += [{"password": $pass}]' \
-               "$CONFIG_FILE" > /tmp/xray_temp.json
-
-            if xray run -test -config /tmp/xray_temp.json >/dev/null 2>&1; then
-                mv /tmp/xray_temp.json "$CONFIG_FILE"
-                systemctl restart xray
-                LINK="trojan://$PASSWORD@$DOMAIN:443?type=ws&security=tls&path=%2Ftrojan&host=$DOMAIN#$USERNAME"
-                echo ""
-                echo "TRIAL CREATED SUCCESSFULLY!"
-                echo "Username: $USERNAME"
-                echo "Password: $PASSWORD"
-                echo "Link: $LINK"
-            else
-                echo "[ERROR] Failed to update config."
-                rm -f /tmp/xray_temp.json
-            fi
-            read -p "Press Enter to continue..."
+            
+            jq --arg pass "$NEW_UUID" --arg email "$USERNAME" '(.inbounds[] | select(.protocol == "trojan" and .port == 10003)).settings.clients += [{"password": $pass, "email": $email}]' "$CONFIG_FILE" > /tmp/x.json && mv /tmp/x.json "$CONFIG_FILE"
+            systemctl restart xray
+            
+            echo "$USERNAME | $NEW_UUID | $EXP_DATE | trojan-trial" >> /etc/xray/clients.db
+            LINK="trojan://${NEW_UUID}@${DOMAIN}:443?path=%2Ftrojan&security=tls&type=ws&sni=${DOMAIN}#${USERNAME}"
+            
+            echo -e "\n\e[32mSUCCESS! TROJAN TRIAL CREATED\e[0m"
+            echo -e " \e[33m• Username :\e[0m $USERNAME"
+            echo -e " \e[33m• Expiry   :\e[0m $EXP_DATE (24 Hours)"
+            echo -e "\e[36m--------------------------------------------------\e[0m"
+            echo -e " \e[32mLink:\e[0m\n$LINK"
+            echo -e "\e[36m--------------------------------------------------\e[0m"
+            read -p "Press Enter..."
             ;;
         3|03)
             clear
-            echo "=== DELETE TROJAN ACCOUNT ==="
-            read -p "Enter the exact Password to delete: " DEL_PASS
-            CONFIG_FILE="/usr/local/etc/xray/config.json"
-            
-            jq --arg pass "$DEL_PASS" \
-               '(.inbounds[] | select(.protocol == "trojan")).settings.clients |= map(select(.password != $pass))' \
-               "$CONFIG_FILE" > /tmp/xray_temp.json && mv /tmp/xray_temp.json "$CONFIG_FILE"
+            read -p "Enter Password/UUID to delete: " DEL_UUID
+            jq --arg pass "$DEL_UUID" '(.inbounds[] | select(.protocol == "trojan")).settings.clients |= map(select(.password != $pass))' /usr/local/etc/xray/config.json > /tmp/x.json && mv /tmp/x.json /usr/local/etc/xray/config.json
+            sed -i "/$DEL_UUID/d" /etc/xray/clients.db
             systemctl restart xray
-            echo "Account deleted if it existed."
-            read -p "Press Enter to continue..."
+            echo "Deleted if found."
+            read -p "Press Enter..."
             ;;
-        0|00)
-            break
-            ;;
-        *)
-            echo "Invalid option."
-            sleep 1
-            ;;
+        0|00) break ;;
     esac
 done
