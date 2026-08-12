@@ -89,26 +89,26 @@ while true; do
     read -p "Select an option [00-11]: " choice
 
     case $choice in
-        01|1)  /root/vpn-management-platform/modules/ssh_manager.sh ;;
-        02|2)  /root/vpn-management-platform/modules/vmess_manager.sh ;;
-        03|3)  /root/vpn-management-platform/modules/vless_manager.sh ;;
-        04|4)  /root/vpn-management-platform/modules/trojan_manager.sh ;;
-        05|5)  /root/vpn-management-platform/modules/settings.sh ;;
-        06|6)  /root/vpn-management-platform/modules/backup.sh ;;
-        07|7)  /root/vpn-management-platform/modules/domain_ssl.sh ;;
+        01|1)  /root/oma/modules/ssh_manager.sh ;;
+        02|2)  /root/oma/modules/vmess_manager.sh ;;
+        03|3)  /root/oma/modules/vless_manager.sh ;;
+        04|4)  /root/oma/modules/trojan_manager.sh ;;
+        05|5)  /root/oma/modules/settings.sh ;;
+        06|6)  /root/oma/modules/backup.sh ;;
+        07|7)  /root/oma/modules/domain_ssl.sh ;;
         08|8)
             clear
             echo -e "${CYAN}==========================================${NC}"
             echo -e "       PURGING EXPIRED ACCOUNTS           "
             echo -e "${CYAN}==========================================${NC}"
-            /root/vpn-management-platform/modules/auto_cleanup.sh
+            /root/oma/modules/auto_cleanup.sh
             echo ""
             echo -e "${GREEN}[✓] Cleanup process complete!${NC}"
             echo -e "Check full logs at: ${YELLOW}/var/log/vpn_cleanup.log${NC}"
             read -p "Press Enter to return..."
             ;;
-        09|9)  /root/vpn-management-platform/modules/status.sh ;;
-        10)    /root/vpn-management-platform/modules/speedtest.sh ;;
+        09|9)  /root/oma/modules/status.sh ;;
+        10)    /root/oma/modules/speedtest.sh ;;
         11)
             systemctl restart xray nginx
             echo -e "${GREEN}[✓] Xray & Nginx Restarted Successfully!${NC}"
