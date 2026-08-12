@@ -1,55 +1,125 @@
 #!/bin/bash
 
+# Color codes
+CYAN='\e[36m'
+GREEN='\e[32m'
+YELLOW='\e[33m'
+RED='\e[31m'
+GRAY='\e[90m'
+BLUE='\e[34m'
+NC='\e[0m'
+
 while true; do
     clear
-    echo "=================================================="
-    echo "       VPN SERVER MANAGEMENT PLATFORM V2.5        "
-    echo "=================================================="
-    echo "  [1]  SSH & OpenVPN Manager"
-    echo "  [2]  VMess Manager"
-    echo "  [3]  VLESS Manager"
-    echo "  [4]  Trojan Manager"
-    echo "  [5]  Shadowsocks Manager"
-    echo "  [6]  SlowDNS Manager"
-    echo "  [7]  System Status & Monitoring"
-    echo "  [8]  Bandwidth & User Usage"
-    echo "  [9]  Domain & SSL Management"
-    echo "  [10] Telegram Bot & Backup Settings"
-    echo "  [11] Server Security & Anti-Abuse"
-    echo "  [12] Purge Expired Accounts"
-    echo "  [0]  Exit"
-    echo "=================================================="
-    read -p "Select an option [0-12]: " choice
+    
+    # Dynamic System Stats
+    HOST_IP=$(hostname -I | awk '{print $1}')
+    UPTIME=$(uptime -p | sed 's/up //')
+    RAM_TOTAL=$(free -m | awk 'NR==2{print $2}')
+    RAM_USED=$(free -m | awk 'NR==2{print $3}')
+    RAM_PCT=$((RAM_USED * 100 / RAM_TOTAL))
+    
+    # Generate graphical RAM progress bar (8 blocks max)
+    FILLED=$((RAM_PCT * 8 / 100))
+    EMPTY=$((8 - FILLED))
+    BAR=""
+    for ((i=0; i<FILLED; i++)); do BAR="${BAR}█"; done
+    for ((i=0; i<EMPTY; i++)); do BAR="${BAR}░"; done
+
+    # Service Health Checks
+    systemctl is-active --quiet xray && XRAY_STATUS="${GREEN}OK${NC}" || XRAY_STATUS="${RED}DOWN${NC}"
+    systemctl is-active --quiet nginx && NGINX_STATUS="${GREEN}OK${NC}" || NGINX_STATUS="${RED}DOWN${NC}"
+    systemctl is-active --quiet ssh && SSH_STATUS="${GREEN}OK${NC}" || SSH_STATUS="${RED}DOWN${NC}"
+
+    # Active Account Stats (Xray + System SSH Users)
+    CONFIG_FILE="/usr/local/etc/xray/config.json"
+    [ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="/etc/xray/config.json"
+    
+    VMESS_COUNT=$(jq '[.inbounds[] | select(.protocol=="vmess").settings.clients[]?] | length' "$CONFIG_FILE" 2>/dev/null || echo 0)
+    VLESS_COUNT=$(jq '[.inbounds[] | select(.protocol=="vless").settings.clients[]?] | length' "$CONFIG_FILE" 2>/dev/null || echo 0)
+    TROJAN_COUNT=$(jq '[.inbounds[] | select(.protocol=="trojan").settings.clients[]?] | length' "$CONFIG_FILE" 2>/dev/null || echo 0)
+    
+    # Count regular human login users (UID 1000+) as active SSH accounts
+    SSH_COUNT=$(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd | wc -l)
+
+    # --- MODULAR BOXED LAYOUT WITH SSH COUNT ---
+    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}│          ${YELLOW}VPN SERVER MANAGEMENT PLATFORM V2.5${CYAN}            │${NC}"
+    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${NC} Host : ${GREEN}$HOST_IP${NC}"
+    echo -e "${CYAN}│${NC} Up   : ${GREEN}$UPTIME${NC}"
+    echo -e "${CYAN}│${NC} RAM  : [${GREEN}${BAR}${NC}] ${YELLOW}${RAM_PCT}%${NC} (${RAM_USED}MB/${RAM_TOTAL}MB)"
+    echo -e "${CYAN}│${NC} SVC  : Xray:[$XRAY_STATUS] Nginx:[$NGINX_STATUS] SSH:[$SSH_STATUS]"
+    echo -e "${CYAN}│${NC} 📊 Active -> SSH:${YELLOW}$SSH_COUNT${NC} VMess:${YELLOW}$VMESS_COUNT${NC} VLESS:${YELLOW}$VLESS_COUNT${NC} Trojan:${YELLOW}$TROJAN_COUNT${NC}"
+    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    # Segment 1: Protocol Management Box
+    echo -e "${BLUE}┌─ PROTOCOL MANAGEMENT ───────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│${NC}  [01] ${CYAN}SSH Manager${NC}"
+    echo -e "${BLUE}│${NC}  [02] ${CYAN}VMess Manager${NC}     ${GRAY}(TLS / Non-TLS)${NC}"
+    echo -e "${BLUE}│${NC}  [03] ${CYAN}VLESS Manager${NC}     ${GRAY}(TLS / Non-TLS / XHTTP)${NC}"
+    echo -e "${BLUE}│${NC}  [04] ${CYAN}Trojan Manager${NC}    ${GRAY}(Secure Proxy)${NC}"
+    echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+
+    # Segment 2: Server & Automation Box
+    echo -e "${BLUE}┌─ SERVER & AUTOMATION ───────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│${NC}  [05] ${CYAN}Settings & Optimization${NC}"
+    echo -e "${BLUE}│${NC}  [06] ${CYAN}Backup/Restore via Telegram${NC}"
+    echo -e "${BLUE}│${NC}  [07] ${CYAN}Domain & SSL Manager${NC}"
+    echo -e "${BLUE}│${NC}  [08] ${GREEN}Purge Expired Accounts${NC}"
+    echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+
+    # Segment 3: Diagnostics & Tools Box
+    echo -e "${BLUE}┌─ DIAGNOSTICS & TOOLS ───────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│${NC}  [09] ${YELLOW}Check Running Services${NC}"
+    echo -e "${BLUE}│${NC}  [10] ${YELLOW}Run Server Speed Test${NC}"
+    echo -e "${BLUE}│${NC}  [11] ${YELLOW}Quick Restart Xray & Nginx${NC}"
+    echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+
+    # Exit Box
+    echo -e "${RED}┌─────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${RED}│${NC}  [00] ${RED}Exit Dashboard${NC}"
+    echo -e "${RED}└─────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    
+    read -p "Select an option [00-11]: " choice
 
     case $choice in
-        1|01)  /root/vpn-management-platform/modules/ssh_manager.sh ;;
-        2|02)  /root/vpn-management-platform/modules/vmess_manager.sh ;;
-        3|03)  /root/vpn-management-platform/modules/vless_manager.sh ;;
-        4|04)  /root/vpn-management-platform/modules/trojan_manager.sh ;;
-        5|05)  /root/vpn-management-platform/modules/shadowsocks_manager.sh ;;
-        6|06)  /root/vpn-management-platform/modules/slowdns_manager.sh ;;
-        7|07)  /root/vpn-management-platform/modules/status.sh ;;
-        8|08)  /root/vpn-management-platform/modules/usage.sh ;;
-        9|09)  /root/vpn-management-platform/modules/domain_ssl.sh ;;
-        10)    /root/vpn-management-platform/modules/backup.sh ;;
-        11)    /root/vpn-management-platform/modules/security.sh ;;
-        12)
+        01|1)  /root/vpn-management-platform/modules/ssh_manager.sh ;;
+        02|2)  /root/vpn-management-platform/modules/vmess_manager.sh ;;
+        03|3)  /root/vpn-management-platform/modules/vless_manager.sh ;;
+        04|4)  /root/vpn-management-platform/modules/trojan_manager.sh ;;
+        05|5)  /root/vpn-management-platform/modules/settings.sh ;;
+        06|6)  /root/vpn-management-platform/modules/backup.sh ;;
+        07|7)  /root/vpn-management-platform/modules/domain_ssl.sh ;;
+        08|8)
             clear
-            echo "=========================================="
-            echo "       PURGING EXPIRED ACCOUNTS           "
-            echo "=========================================="
+            echo -e "${CYAN}==========================================${NC}"
+            echo -e "       PURGING EXPIRED ACCOUNTS           "
+            echo -e "${CYAN}==========================================${NC}"
             /root/vpn-management-platform/modules/auto_cleanup.sh
             echo ""
-            echo -e "\e[32m[✓] Cleanup process complete!\e[0m"
-            echo -e "Check full logs at: \e[33m/var/log/vpn_cleanup.log\e[0m"
+            echo -e "${GREEN}[✓] Cleanup process complete!${NC}"
+            echo -e "Check full logs at: ${YELLOW}/var/log/vpn_cleanup.log${NC}"
             read -p "Press Enter to return..."
             ;;
-        0|00)
+        09|9)  /root/vpn-management-platform/modules/status.sh ;;
+        10)    /root/vpn-management-platform/modules/speedtest.sh ;;
+        11)
+            systemctl restart xray nginx
+            echo -e "${GREEN}[✓] Xray & Nginx Restarted Successfully!${NC}"
+            sleep 1.5
+            ;;
+        00|0)
             echo "Exiting..."
             exit 0
             ;;
         *)
-            echo -e "\e[31mInvalid option!\e[0m"
+            echo -e "${RED}Invalid option!${NC}"
             sleep 1
             ;;
     esac
