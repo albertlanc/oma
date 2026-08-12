@@ -20,7 +20,7 @@ while true; do
             [[ -z "$EXP" || ! "$EXP" =~ ^[0-9]+$ ]] && EXP=30
             EXP_DATE=$(date -d "+$EXP days" +"%Y-%m-%d")
             
-            DOMAIN="vps.gregsmarty.co.uk"
+            DOMAIN=$(cat /etc/xray/domain)
             NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
             CONFIG_FILE="/usr/local/etc/xray/config.json"
             
@@ -47,7 +47,7 @@ while true; do
             [[ -z "$EXP" || ! "$EXP" =~ ^[0-9]+$ ]] && EXP=30
             EXP_DATE=$(date -d "+$EXP days" +"%Y-%m-%d")
             
-            DOMAIN="vps.gregsmarty.co.uk"
+            DOMAIN=$(cat /etc/xray/domain)
             NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
             CONFIG_FILE="/usr/local/etc/xray/config.json"
             
@@ -72,7 +72,7 @@ while true; do
             EXP=1
             EXP_DATE=$(date -d "+$EXP days" +"%Y-%m-%d")
             
-            DOMAIN="vps.gregsmarty.co.uk"
+            DOMAIN=$(cat /etc/xray/domain)
             NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
             CONFIG_FILE="/usr/local/etc/xray/config.json"
             
