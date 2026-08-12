@@ -1,7 +1,8 @@
 #!/bin/bash
 echo "[INFO] Starting VPN Platform Installation..."
 
-# 1. Make sure all module scripts are fully executable
+# 1. Make sure the main menu and all module scripts are fully executable
+chmod +x menu.sh 2>/dev/null
 chmod +x modules/*.sh 2>/dev/null
 
 # 2. Verify domain configuration
@@ -16,6 +17,16 @@ echo "[INFO] Configured Domain: $DOMAIN"
 echo "[INFO] Installing required core packages..."
 apt-get update -y
 apt-get install -y curl wget jq git nginx certbot
+
+# ========================================================
+# ADDED FIX: Install X-ray Core Binary & Systemd Service
+# ========================================================
+echo "[INFO] Installing X-ray Core..."
+bash -c "$(curl -L -s https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install > /dev/null 2>&1
+systemctl daemon-reload
+systemctl enable xray --quiet
+systemctl start xray
+# ========================================================
 
 # 4. Run Xray and Nginx setup module if it exists
 if [ -f "modules/setup_xray_nginx.sh" ]; then
@@ -51,6 +62,7 @@ fi
 
 # 8. Restart core backend services
 echo "[INFO] Restarting all backend services..."
+systemctl daemon-reload
 systemctl restart xray nginx slowdns 2>/dev/null
 
 echo "--------------------------------------------------"
