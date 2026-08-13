@@ -1,37 +1,249 @@
 #!/bin/bash
+export DEBIAN_FRONTEND=noninteractive
+
+# 0. Check for root privileges
+if [ "$EUID" -ne 0 ]; then
+    echo "[ERROR] Please run this script as root (sudo bash install.sh)."
+    exit 1
+fi
+
 echo "[INFO] Starting VPN Platform Installation..."
 
-# 1. Make sure all module scripts are fully executable
+# 1. Add temporary swap if RAM is low (prevents Go build crashes)
+if [ ! -f /swapfile ] && [ $(free -m | awk '/Mem:/ {print $2}') -lt 1500 ]; then
+    echo "[INFO] Low RAM detected. Creating temporary swap space..."
+    fallocate -l 1G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+fi
+
+# 2. Make sure all module scripts are fully executable
 chmod +x modules/*.sh 2>/dev/null
 
-# 2. Verify domain configuration
+# 3. Verify domain configuration
+mkdir -p /etc/xray
 if [ ! -f /etc/xray/domain ]; then
     echo "[ERROR] Domain configuration file not found in /etc/xray/domain!"
+    echo "Please create it first: echo 'yourdomain.com' > /etc/xray/domain"
     exit 1
 fi
 DOMAIN=$(cat /etc/xray/domain)
 echo "[INFO] Configured Domain: $DOMAIN"
 
-# 3. Install base system dependencies
+# 4. Ensure a baseline X-ray config exists
+if [ ! -f /etc/xray/config.json ]; then
+    cat << "EOF" > /etc/xray/config.json
+{
+    "inbounds": [
+        {
+            "port": 10001,
+            "listen": "127.0.0.1",
+            "protocol": "vmess",
+            "settings": { "clients": [] },
+            "streamSettings": { "network": "ws", "wsSettings": { "path": "/vmess" } }
+        },
+        {
+            "port": 10002,
+            "listen": "127.0.0.1",
+            "protocol": "vless",
+            "settings": { "clients": [], "encryption": "none" },
+            "streamSettings": { "network": "ws", "wsSettings": { "path": "/vless" } }
+        },
+        {
+            "port": 10003,
+            "listen": "127.0.0.1",
+            "protocol": "trojan",
+            "settings": { "clients": [] },
+            "streamSettings": { "network": "ws", "wsSettings": { "path": "/trojan" } }
+        }
+    ]
+}
+EOF
+fi
+
+# 5. Install base system dependencies
 echo "[INFO] Installing required core packages..."
 apt-get update -y
-apt-get install -y curl wget jq git nginx certbot
+apt-get install -y curl wget jq git nginx certbot ufw python3 iptables
 
-# 4. Run Xray and Nginx setup module if it exists
-if [ -f "modules/setup_xray_nginx.sh" ]; then
-    echo "[INFO] Executing Xray & Nginx setup..."
-    bash modules/setup_xray_nginx.sh
+# 6. Configure UFW firewall rules for core ports
+echo "[INFO] Configuring firewall rules..."
+ufw allow 22/tcp 2>/dev/null
+ufw allow 80/tcp 2>/dev/null
+ufw allow 443/tcp 2>/dev/null
+ufw allow 8080/tcp 2>/dev/null
+ufw allow 53/udp 2>/dev/null
+ufw --force enable 2>/dev/null
+
+# 7. Apply master Nginx reverse proxy configuration
+echo "[INFO] Applying master Nginx reverse proxy configuration..."
+cat << "EOF" > /etc/nginx/conf.d/master_vpn.conf
+server {
+    listen 80;
+    listen [::]:80;
+    listen 8080;
+    listen [::]:8080;
+    server_name _;
+
+    location /vmess {
+        proxy_pass http://127.0.0.1:10001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+    location /vless {
+        proxy_pass http://127.0.0.1:10002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+    location /trojan {
+        proxy_pass http://127.0.0.1:10003;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:10001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+
+    ssl_certificate /etc/xray/xray.crt;
+    ssl_certificate_key /etc/xray/xray.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    location = /ssh-ws {
+        proxy_pass http://127.0.0.1:10015;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+    location /vmess {
+        proxy_pass http://127.0.0.1:10001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+    location /vless {
+        proxy_pass http://127.0.0.1:10002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+    location /trojan {
+        proxy_pass http://127.0.0.1:10003;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:10001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+    }
+}
+EOF
+
+# 8. Install automated client management utility
+echo "[INFO] Installing automated client management utility..."
+cat << "EOF" > /usr/local/bin/xray-add-client
+#!/usr/bin/env python3
+import json, re, sys
+if len(sys.argv) < 2:
+    print("Usage: xray-add-client <UUID_OR_PASSWORD>")
+    sys.exit(1)
+new_cred = sys.argv[1]
+config_path = "/etc/xray/config.json"
+with open(config_path, "r") as f:
+    raw = f.read()
+data = json.loads(re.sub(r"//.*?\n|/\*.*?\*/", "", raw, flags=re.S))
+updated = False
+for ib in data.get("inbounds", []):
+    proto = ib.get("protocol")
+    if proto in ["vmess", "vless"]:
+        clients = ib.setdefault("settings", {}).setdefault("clients", [])
+        if not any(c.get("id") == new_cred for c in clients):
+            clients.append({"id": new_cred, "alterId": 0})
+            updated = True
+    elif proto == "trojan":
+        clients = ib.setdefault("settings", {}).setdefault("clients", [])
+        if not any(c.get("password") == new_cred for c in clients):
+            clients.append({"password": new_cred})
+            updated = True
+if updated:
+    with open(config_path, "w") as f:
+        json.dump(data, f, indent=4)
+    print("SUCCESS")
+else:
+    print("EXISTS_OR_SKIPPED")
+EOF
+chmod +x /usr/local/bin/xray-add-client
+
+# 9. Set up SlowDNS and compile dnstt-server
+echo "[INFO] Setting up SlowDNS and building dnstt-server..."
+systemctl stop systemd-resolved 2>/dev/null
+systemctl disable systemd-resolved 2>/dev/null
+rm -f /etc/resolv.conf
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+
+iptables -t nat -F
+iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
+
+rm -rf /usr/local/go /tmp/go.tar.gz /tmp/dnstt /usr/local/bin/dnstt-server
+wget -O /tmp/go.tar.gz https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
+tar -C /usr/local -xzf /tmp/go.tar.gz
+export PATH=/usr/local/go/bin:$PATH
+
+git clone https://www.bamsoftware.com/git/dnstt.git /tmp/dnstt
+cd /tmp/dnstt/dnstt-server
+/usr/local/go/bin/go build -o /usr/local/bin/dnstt-server
+chmod +x /usr/local/bin/dnstt-server
+
+mkdir -p /etc/slowdns
+if [ ! -f /etc/slowdns/server.key ]; then
+    /usr/local/bin/dnstt-server -gen-key -privkey-file /etc/slowdns/server.key -pubkey-file /etc/slowdns/server.key.pub
 fi
 
-# 5. Run the updated SlowDNS installation and key generation module
-echo "[INFO] Setting up SlowDNS and generating cryptographic keys..."
-if [ -f "modules/install_slowdns.sh" ]; then
-    bash modules/install_slowdns.sh
-else
-    echo "[ERROR] modules/install_slowdns.sh is missing from your repository!"
-fi
+cat << EOF > /etc/systemd/system/slowdns.service
+[Unit]
+Description=SlowDNS Server
+After=network.target
 
-# 6. Issue or verify SSL Certificate using Certbot
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dnstt-server -udp :5300 -privkey-file /etc/slowdns/server.key $DOMAIN 127.0.0.1:22
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable slowdns
+systemctl restart slowdns
+
+# 10. Issue or verify SSL Certificate using Certbot
 echo "[INFO] Securing domain with SSL..."
 if [ -f "modules/issue_ssl.sh" ]; then
     bash modules/issue_ssl.sh
@@ -41,7 +253,7 @@ else
     systemctl start nginx
 fi
 
-# 7. Install global menu shortcut to both standard paths
+# 11. Install global menu shortcut to both standard paths
 if [ -f "menu.sh" ]; then
     cp -f menu.sh /usr/local/bin/menu
     cp -f menu.sh /usr/bin/menu
@@ -49,10 +261,16 @@ if [ -f "menu.sh" ]; then
     echo "[INFO] Global 'menu' shortcut installed successfully."
 fi
 
-# 8. Restart core backend services
-echo "[INFO] Restarting all backend services..."
-systemctl restart xray nginx slowdns 2>/dev/null
+# 12. Enable services on boot and restart core backend components
+echo "[INFO] Enabling and restarting all backend services..."
+systemctl enable nginx xray slowdns 2>/dev/null
+nginx -t && systemctl restart nginx xray slowdns 2>/dev/null
 
 echo "--------------------------------------------------"
 echo " INSTALL COMPLETE! Type 'menu' to access the panel. "
 echo "--------------------------------------------------"
+echo -e "\nSlowDNS status:"
+systemctl is-active slowdns
+echo -e "\nYOUR SLOWDNS PUBLIC KEY:"
+cat /etc/slowdns/server.key.pub
+echo -e "--------------------------------------------------\n"
