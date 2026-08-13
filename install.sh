@@ -21,7 +21,7 @@ fi
 # 2. Make sure all module scripts are fully executable
 chmod +x modules/*.sh 2>/dev/null
 
-# 3. Clean and handle Domain Configuration robustly
+# 3. Interactive Domain & Nameserver Configuration
 mkdir -p /etc/xray
 if [ -n "$1" ]; then
     echo "$1" > /etc/xray/domain
@@ -30,19 +30,30 @@ else
     echo "--------------------------------------------------"
     echo "       DOMAIN & NAMESERVER CONFIGURATION          "
     echo "--------------------------------------------------"
-    read -p "Enter your main domain (e.g., vpn.yourdomain.com): " INPUT_DOMAIN
+    read -p "Enter your main domain (e.g., yourdomain.com): " INPUT_DOMAIN
     if [ -z "$INPUT_DOMAIN" ]; then
-        INPUT_DOMAIN="139.162.147.133"
-        echo "[WARNING] No domain entered. Falling back to server IP: $INPUT_DOMAIN"
+        echo "[ERROR] Domain cannot be empty. Exiting."
+        exit 1
     fi
     echo "$INPUT_DOMAIN" > /etc/xray/domain
 fi
+
 DOMAIN=$(cat /etc/xray/domain)
 echo "[INFO] Configured Active Domain: $DOMAIN"
 
 if [ -n "$2" ]; then
     echo "$2" > /etc/xray/ns-domain
+else
+    read -p "Enter your SlowDNS nameserver subdomain (e.g., ns.$DOMAIN or ns-ter.$DOMAIN): " INPUT_NS
+    if [ -z "$INPUT_NS" ]; then
+        INPUT_NS="ns-$DOMAIN"
+        echo "[WARNING] No nameserver entered. Defaulting to: $INPUT_NS"
+    fi
+    echo "$INPUT_NS" > /etc/xray/ns-domain
 fi
+
+NS_DOMAIN=$(cat /etc/xray/ns-domain)
+echo "[INFO] Configured Nameserver Domain: $NS_DOMAIN"
 
 # 4. Write a clean, modern, fully compatible X-ray JSON config
 cat << "EOF" > /etc/xray/config.json
@@ -253,13 +264,15 @@ else:
 EOF
 chmod +x /usr/local/bin/xray-add-client
 
-# 9. Set up SlowDNS and compile dnstt-server
+# 9. Set up SlowDNS and compile dnstt-server (with Ubuntu 24 netfilter compatibility)
 echo "[INFO] Setting up SlowDNS and building dnstt-server..."
 systemctl stop systemd-resolved 2>/dev/null
 systemctl disable systemd-resolved 2>/dev/null
 rm -f /etc/resolv.conf
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
+modprobe ip_tables 2>/dev/null
+modprobe iptable_nat 2>/dev/null
 iptables -t nat -F
 iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
 
@@ -285,7 +298,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dnstt-server -udp :5300 -privkey-file /etc/slowdns/server.key $DOMAIN 127.0.0.1:22
+ExecStart=/usr/local/bin/dnstt-server -udp :5300 -privkey-file /etc/slowdns/server.key $NS_DOMAIN 127.0.0.1:22
 Restart=always
 RestartSec=3
 
@@ -297,22 +310,19 @@ systemctl daemon-reload
 systemctl enable slowdns
 systemctl restart slowdns
 
-# 10. Automatically Issue SSL Certificate via Certbot
+# 10. Automatically Issue SSL Certificate via Certbot matching backend domain variables
 echo "[INFO] Automatically requesting and registering SSL Certificate via Certbot for $DOMAIN..."
-if [ "$DOMAIN" != "139.162.147.133" ]; then
-    systemctl stop nginx 2>/dev/null
-    certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null
-    
-    if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-        ln -sf /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/xray/xray.crt
-        ln -sf /etc/letsencrypt/live/$DOMAIN/privkey.pem /etc/xray/xray.key
-    else
-        openssl req -x509 -nodes -days 365 -newkey rsa:2056 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/CN=$DOMAIN" 2>/dev/null
-    fi
-    systemctl start nginx 2>/dev/null
+systemctl stop nginx 2>/dev/null
+certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null
+
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    ln -sf /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/xray/xray.crt
+    ln -sf /etc/letsencrypt/live/$DOMAIN/privkey.pem /etc/xray/xray.key
 else
+    echo "[WARNING] Let's Encrypt failed. Falling back to self-signed SSL for $DOMAIN..."
     openssl req -x509 -nodes -days 365 -newkey rsa:2056 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/CN=$DOMAIN" 2>/dev/null
 fi
+systemctl start nginx 2>/dev/null
 
 # 11. Install global menu shortcut
 if [ -f "menu.sh" ]; then
@@ -334,6 +344,7 @@ echo " Type 'menu' to access your panel dashboard.       "
 echo "--------------------------------------------------"
 echo -e "\nSlowDNS status:"
 systemctl is-active slowdns
-echo -e "\nYOUR SLOWDNS PUBLIC KEY:"
+echo -e "\nYOUR SLOWDNS NAMESERVER ($NS_DOMAIN):"
+echo -e "YOUR SLOWDNS PUBLIC KEY:"
 cat /etc/slowdns/server.key.pub
-echo -e "--------------------------------------------------\n"
+echo "--------------------------------------------------\n"
