@@ -9,7 +9,7 @@ fi
 
 echo "[INFO] Starting VPN Platform Installation..."
 
-# 1. Add temporary swap if RAM is low (prevents Go build crashes)
+# 1. Add temporary swap if RAM is low
 if [ ! -f /swapfile ] && [ $(free -m | awk '/Mem:/ {print $2}') -lt 1500 ]; then
     echo "[INFO] Low RAM detected. Creating temporary swap space..."
     fallocate -l 1G /swapfile
@@ -21,30 +21,31 @@ fi
 # 2. Make sure all module scripts are fully executable
 chmod +x modules/*.sh 2>/dev/null
 
-# 3. Interactive or Pre-configured Domain & Nameserver Input
+# 3. Clean and handle Domain Configuration robustly
 mkdir -p /etc/xray
-if [ ! -f /etc/xray/domain ]; then
+if [ -n "$1" ]; then
+    echo "$1" > /etc/xray/domain
+    echo "[INFO] Domain overwritten via argument: $1"
+else
     echo "--------------------------------------------------"
     echo "       DOMAIN & NAMESERVER CONFIGURATION          "
     echo "--------------------------------------------------"
     read -p "Enter your main domain (e.g., vpn.yourdomain.com): " INPUT_DOMAIN
     if [ -z "$INPUT_DOMAIN" ]; then
-        echo "[ERROR] Domain cannot be empty!"
-        exit 1
+        INPUT_DOMAIN="139.162.147.133"
+        echo "[WARNING] No domain entered. Falling back to server IP: $INPUT_DOMAIN"
     fi
     echo "$INPUT_DOMAIN" > /etc/xray/domain
 fi
 DOMAIN=$(cat /etc/xray/domain)
-echo "[INFO] Configured Domain: $DOMAIN"
+echo "[INFO] Configured Active Domain: $DOMAIN"
 
-# Optional: Save nameserver if needed for records
-if [ ! -f /etc/xray/ns-domain ] && [ -n "$INPUT_NS" ]; then
-    echo "$INPUT_NS" > /etc/xray/ns-domain
+if [ -n "$2" ]; then
+    echo "$2" > /etc/xray/ns-domain
 fi
 
-# 4. Ensure X-ray directories and a valid baseline config exist before starting service
-if [ ! -f /etc/xray/config.json ] || [ ! -s /etc/xray/config.json ]; then
-    cat << "EOF" > /etc/xray/config.json
+# 4. Write a clean, modern, fully compatible X-ray JSON config
+cat << "EOF" > /etc/xray/config.json
 {
     "log": {
         "loglevel": "warning"
@@ -57,8 +58,7 @@ if [ ! -f /etc/xray/config.json ] || [ ! -s /etc/xray/config.json ]; then
             "settings": {
                 "clients": [
                     {
-                        "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
-                        "alterId": 0
+                        "id": "b831381d-6324-4d53-ad4f-8cda48b30811"
                     }
                 ]
             },
@@ -110,19 +110,18 @@ if [ ! -f /etc/xray/config.json ] || [ ! -s /etc/xray/config.json ]; then
     ]
 }
 EOF
-fi
 
-# 5. Install base system dependencies and official X-ray core binary
-echo "[INFO] Installing required core packages..."
+# 5. Install base dependencies, Stunnel, and official X-ray core binary
+echo "[INFO] Installing required core packages & Stunnel..."
 apt-get update -y
-apt-get install -y curl wget jq git nginx certbot ufw python3 iptables
+apt-get install -y curl wget jq git nginx certbot ufw python3 iptables stunnel4
 
 if ! command -v xray &> /dev/null; then
     echo "[INFO] Installing official X-ray core..."
     bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
 fi
 
-# 6. Configure UFW firewall rules for core ports
+# 6. Configure UFW firewall rules
 echo "[INFO] Configuring firewall rules..."
 ufw allow 22/tcp 2>/dev/null
 ufw allow 80/tcp 2>/dev/null
@@ -238,7 +237,7 @@ for ib in data.get("inbounds", []):
     if proto in ["vmess", "vless"]:
         clients = ib.setdefault("settings", {}).setdefault("clients", [])
         if not any(c.get("id") == new_cred for c in clients):
-            clients.append({"id": new_cred, "alterId": 0})
+            clients.append({"id": new_cred})
             updated = True
     elif proto == "trojan":
         clients = ib.setdefault("settings", {}).setdefault("clients", [])
@@ -254,7 +253,7 @@ else:
 EOF
 chmod +x /usr/local/bin/xray-add-client
 
-# 9. Set up SlowDNS and compile dnstt-server immediately
+# 9. Set up SlowDNS and compile dnstt-server
 echo "[INFO] Setting up SlowDNS and building dnstt-server..."
 systemctl stop systemd-resolved 2>/dev/null
 systemctl disable systemd-resolved 2>/dev/null
@@ -298,27 +297,24 @@ systemctl daemon-reload
 systemctl enable slowdns
 systemctl restart slowdns
 
-# 10. Automatically Issue SSL Certificate immediately using Certbot
+# 10. Automatically Issue SSL Certificate via Certbot
 echo "[INFO] Automatically requesting and registering SSL Certificate via Certbot for $DOMAIN..."
-if [ -f "modules/issue_ssl.sh" ]; then
-    bash modules/issue_ssl.sh
-else
+if [ "$DOMAIN" != "139.162.147.133" ]; then
     systemctl stop nginx 2>/dev/null
-    certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --register-unsafely-without-email 2>/dev/null
+    certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null
     
-    # Link certbot certificates to X-ray standard paths expected by Nginx/Xray
     if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
         ln -sf /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/xray/xray.crt
         ln -sf /etc/letsencrypt/live/$DOMAIN/privkey.pem /etc/xray/xray.key
     else
-        # Fallback self-signed cert generation if certbot fails (e.g., DNS not propagated yet)
-        echo "[WARNING] Certbot automatic issuance failed or domain DNS not yet propagated. Generating temporary self-signed certificate..."
         openssl req -x509 -nodes -days 365 -newkey rsa:2056 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/CN=$DOMAIN" 2>/dev/null
     fi
     systemctl start nginx 2>/dev/null
+else
+    openssl req -x509 -nodes -days 365 -newkey rsa:2056 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/CN=$DOMAIN" 2>/dev/null
 fi
 
-# 11. Install global menu shortcut to both standard paths
+# 11. Install global menu shortcut
 if [ -f "menu.sh" ]; then
     cp -f menu.sh /usr/local/bin/menu
     cp -f menu.sh /usr/bin/menu
@@ -326,11 +322,11 @@ if [ -f "menu.sh" ]; then
     echo "[INFO] Global 'menu' shortcut installed successfully."
 fi
 
-# 12. Test configuration syntax and start X-ray & other services
+# 12. Test configuration syntax and start all services cleanly
 echo "[INFO] Enabling and restarting all backend services..."
-xray run -test -config /etc/xray/config.json 2>/dev/null
-systemctl enable nginx xray slowdns 2>/dev/null
-nginx -t && systemctl restart nginx xray slowdns 2>/dev/null
+xray run -test -config /etc/xray/config.json
+systemctl enable nginx xray slowdns stunnel4 2>/dev/null
+nginx -t && systemctl restart nginx xray slowdns stunnel4 2>/dev/null
 
 echo "--------------------------------------------------"
 echo " INSTALL & SSL REGISTRATION COMPLETE!             "
