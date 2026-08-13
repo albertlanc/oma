@@ -10,9 +10,12 @@ fi
 
 echo -e "\e[33m[INFO] Configuring Xray Core for domain: ${SERVER_DOMAIN}...\e[0m"
 
-# 1. Generate Master Xray Config (/etc/xray/config.json)
+# Ensure Xray config directory exists
+mkdir -p /usr/local/etc/xray
+
+# 1. Generate Master Xray Config (/usr/local/etc/xray/config.json)
 # Using standard ports: VMess (10001), VLESS (10002), Trojan (10003)
-cat << 'CONFIGEOF' > /etc/xray/config.json
+cat << 'CONFIGEOF' > /usr/local/etc/xray/config.json
 {
   "log": {
     "loglevel": "warning"
@@ -23,12 +26,7 @@ cat << 'CONFIGEOF' > /etc/xray/config.json
       "listen": "127.0.0.1",
       "protocol": "vmess",
       "settings": {
-        "clients": [
-          {
-            "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
-            "alterId": 0
-          }
-        ]
+        "clients": []
       },
       "streamSettings": {
         "network": "ws",
@@ -42,13 +40,8 @@ cat << 'CONFIGEOF' > /etc/xray/config.json
       "listen": "127.0.0.1",
       "protocol": "vless",
       "settings": {
-        "clients": [
-          {
-            "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
-            "flow": "xtls-rprx-direct"
-          }
-        ],
-        "encryption": "none"
+        "clients": [],
+        "decryption": "none"
       },
       "streamSettings": {
         "network": "ws",
@@ -62,11 +55,7 @@ cat << 'CONFIGEOF' > /etc/xray/config.json
       "listen": "127.0.0.1",
       "protocol": "trojan",
       "settings": {
-        "clients": [
-          {
-            "password": "vpn-commercial-password"
-          }
-        ]
+        "clients": []
       },
       "streamSettings": {
         "network": "ws",
@@ -104,7 +93,6 @@ server {
 
     # VMess WebSocket Route
     location /vmess {
-        proxy_redirect off;
         proxy_pass http://127.0.0.1:10001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -116,7 +104,6 @@ server {
 
     # VLESS WebSocket Route
     location /vless {
-        proxy_redirect off;
         proxy_pass http://127.0.0.1:10002;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -128,7 +115,6 @@ server {
 
     # Trojan WebSocket Route
     location /trojan {
-        proxy_redirect off;
         proxy_pass http://127.0.0.1:10003;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -140,9 +126,7 @@ server {
 }
 NGINXEOF
 
-# 3. Test configurations and restart services
-echo -e "\e[33m[INFO] Restarting Xray and Nginx services...\n\e[0m"
-nginx -t && systemctl restart nginx
+echo -e "\e[32m[INFO] Restarting Nginx and Xray services...\e[0m"
+systemctl restart nginx
 systemctl restart xray
-
-echo -e "\e[32m[SUCCESS] Xray and Nginx routing templates deployed and active!\e[0m"
+echo -e "\e[32m[INFO] Setup complete successfully!\e[0m"
