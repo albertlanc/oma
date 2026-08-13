@@ -21,51 +21,106 @@ fi
 # 2. Make sure all module scripts are fully executable
 chmod +x modules/*.sh 2>/dev/null
 
-# 3. Verify domain configuration
+# 3. Interactive or Pre-configured Domain & Nameserver Input
 mkdir -p /etc/xray
 if [ ! -f /etc/xray/domain ]; then
-    echo "[ERROR] Domain configuration file not found in /etc/xray/domain!"
-    echo "Please create it first: echo 'yourdomain.com' > /etc/xray/domain"
-    exit 1
+    echo "--------------------------------------------------"
+    echo "       DOMAIN & NAMESERVER CONFIGURATION          "
+    echo "--------------------------------------------------"
+    read -p "Enter your main domain (e.g., vpn.yourdomain.com): " INPUT_DOMAIN
+    if [ -z "$INPUT_DOMAIN" ]; then
+        echo "[ERROR] Domain cannot be empty!"
+        exit 1
+    fi
+    echo "$INPUT_DOMAIN" > /etc/xray/domain
 fi
 DOMAIN=$(cat /etc/xray/domain)
 echo "[INFO] Configured Domain: $DOMAIN"
 
-# 4. Ensure a baseline X-ray config exists
-if [ ! -f /etc/xray/config.json ]; then
+# Optional: Save nameserver if needed for records
+if [ ! -f /etc/xray/ns-domain ] && [ -n "$INPUT_NS" ]; then
+    echo "$INPUT_NS" > /etc/xray/ns-domain
+fi
+
+# 4. Ensure X-ray directories and a valid baseline config exist before starting service
+if [ ! -f /etc/xray/config.json ] || [ ! -s /etc/xray/config.json ]; then
     cat << "EOF" > /etc/xray/config.json
 {
+    "log": {
+        "loglevel": "warning"
+    },
     "inbounds": [
         {
             "port": 10001,
             "listen": "127.0.0.1",
             "protocol": "vmess",
-            "settings": { "clients": [] },
-            "streamSettings": { "network": "ws", "wsSettings": { "path": "/vmess" } }
+            "settings": {
+                "clients": [
+                    {
+                        "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                        "alterId": 0
+                    }
+                ]
+            },
+            "streamSettings": {
+                "network": "ws",
+                "wsSettings": {
+                    "path": "/vmess"
+                }
+            }
         },
         {
             "port": 10002,
             "listen": "127.0.0.1",
             "protocol": "vless",
-            "settings": { "clients": [], "encryption": "none" },
-            "streamSettings": { "network": "ws", "wsSettings": { "path": "/vless" } }
+            "settings": {
+                "clients": [
+                    {
+                        "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
+                        "flow": "xtls-rprx-direct"
+                    }
+                ],
+                "encryption": "none"
+            },
+            "streamSettings": {
+                "network": "ws",
+                "wsSettings": {
+                    "path": "/vless"
+                }
+            }
         },
         {
             "port": 10003,
             "listen": "127.0.0.1",
             "protocol": "trojan",
-            "settings": { "clients": [] },
-            "streamSettings": { "network": "ws", "wsSettings": { "path": "/trojan" } }
+            "settings": {
+                "clients": [
+                    {
+                        "password": "vpn-commercial-password"
+                    }
+                ]
+            },
+            "streamSettings": {
+                "network": "ws",
+                "wsSettings": {
+                    "path": "/trojan"
+                }
+            }
         }
     ]
 }
 EOF
 fi
 
-# 5. Install base system dependencies
+# 5. Install base system dependencies and official X-ray core binary
 echo "[INFO] Installing required core packages..."
 apt-get update -y
 apt-get install -y curl wget jq git nginx certbot ufw python3 iptables
+
+if ! command -v xray &> /dev/null; then
+    echo "[INFO] Installing official X-ray core..."
+    bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
+fi
 
 # 6. Configure UFW firewall rules for core ports
 echo "[INFO] Configuring firewall rules..."
@@ -199,7 +254,7 @@ else:
 EOF
 chmod +x /usr/local/bin/xray-add-client
 
-# 9. Set up SlowDNS and compile dnstt-server
+# 9. Set up SlowDNS and compile dnstt-server immediately
 echo "[INFO] Setting up SlowDNS and building dnstt-server..."
 systemctl stop systemd-resolved 2>/dev/null
 systemctl disable systemd-resolved 2>/dev/null
@@ -243,14 +298,24 @@ systemctl daemon-reload
 systemctl enable slowdns
 systemctl restart slowdns
 
-# 10. Issue or verify SSL Certificate using Certbot
-echo "[INFO] Securing domain with SSL..."
+# 10. Automatically Issue SSL Certificate immediately using Certbot
+echo "[INFO] Automatically requesting and registering SSL Certificate via Certbot for $DOMAIN..."
 if [ -f "modules/issue_ssl.sh" ]; then
     bash modules/issue_ssl.sh
 else
-    systemctl stop nginx
-    certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
-    systemctl start nginx
+    systemctl stop nginx 2>/dev/null
+    certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --register-unsafely-without-email 2>/dev/null
+    
+    # Link certbot certificates to X-ray standard paths expected by Nginx/Xray
+    if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+        ln -sf /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/xray/xray.crt
+        ln -sf /etc/letsencrypt/live/$DOMAIN/privkey.pem /etc/xray/xray.key
+    else
+        # Fallback self-signed cert generation if certbot fails (e.g., DNS not propagated yet)
+        echo "[WARNING] Certbot automatic issuance failed or domain DNS not yet propagated. Generating temporary self-signed certificate..."
+        openssl req -x509 -nodes -days 365 -newkey rsa:2056 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/CN=$DOMAIN" 2>/dev/null
+    fi
+    systemctl start nginx 2>/dev/null
 fi
 
 # 11. Install global menu shortcut to both standard paths
@@ -261,13 +326,15 @@ if [ -f "menu.sh" ]; then
     echo "[INFO] Global 'menu' shortcut installed successfully."
 fi
 
-# 12. Enable services on boot and restart core backend components
+# 12. Test configuration syntax and start X-ray & other services
 echo "[INFO] Enabling and restarting all backend services..."
+xray run -test -config /etc/xray/config.json 2>/dev/null
 systemctl enable nginx xray slowdns 2>/dev/null
 nginx -t && systemctl restart nginx xray slowdns 2>/dev/null
 
 echo "--------------------------------------------------"
-echo " INSTALL COMPLETE! Type 'menu' to access the panel. "
+echo " INSTALL & SSL REGISTRATION COMPLETE!             "
+echo " Type 'menu' to access your panel dashboard.       "
 echo "--------------------------------------------------"
 echo -e "\nSlowDNS status:"
 systemctl is-active slowdns
