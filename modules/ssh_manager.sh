@@ -63,11 +63,17 @@ while true; do
                 echo "$username:$max_login" >> "$LIMITS_CONF"
                 server_ip=$(hostname -I | awk '{print $1}')
                 dom="${SERVER_DOMAIN:-$server_ip}"
-                ns="${SERVER_NS:-${NS1:-Not Set}}"
+                
+                # Fetch SlowDNS public key dynamically from standard paths
                 slowdns_pub="Not Generated"
-                if [ -f "/etc/slowdns/server.pub" ]; then
-                    slowdns_pub=$(cat /etc/slowdns/server.pub)
-                fi
+                for pub_path in "/etc/slowdns/server.key.pub" "/root/slowdns.pub" "/etc/slowdns/server.pub" "/etc/slowdns/pub.key"; do
+                    if [ -f "$pub_path" ] && [ -s "$pub_path" ]; then
+                        slowdns_pub=$(cat "$pub_path")
+                        break
+                    fi
+                done
+                ns=$(cat /etc/xray/ns-domain 2>/dev/null || cat /root/nsdomain 2>/dev/null || echo "${SERVER_NS:-ns-$dom}")
+
                 clear
                 echo -e "\e[36m=================================================\e[0m"
                 echo -e "          SSH ACCOUNT CREATED SUCCESSFULLY       "
@@ -81,23 +87,16 @@ while true; do
                 echo -e "  Server IP / Host  : $server_ip"
                 echo -e "  Domain            : $dom"
                 echo -e "  Name Server (NS)  : $ns"
-                echo -e "  SlowDNS Pub Key   : ${slowdns_pub}"
+                echo -e "  SlowDNS Pub Key   : \e[32m${slowdns_pub}\e[0m"
                 echo -e "\e[36m-------------------------------------------------\e[0m"
                 echo -e "  PORTS CONFIGURATION:"
                 echo -e "    - SSH Normal    : 22"
-                echo -e "    - Dropbear      : 109, 443"
-                echo -e "    - SSL/TLS Proxy : 443"
-                echo -e "    - UDPGW (Badvpn): \e[32m7300\e[0m"
-                echo -e "\e[36m-------------------------------------------------\e[0m"
-                echo -e "  BADVPN UDPGW (GAMING/VOIP):"
-                echo -e "    - Port          : 7300"
-                echo -e "    - Client Command: badvpn-udpgw --listen-addr 127.0.0.1:7300 --server-ip-address $server_ip:7300"
+                echo -e "    - SSH WebSocket : 80 (NoTLS) / 443 (TLS)"
+                echo -e "    - SlowDNS       : 53"
                 echo -e "\e[36m-------------------------------------------------\e[0m"
                 echo -e "  PAYLOAD SAMPLES:"
-                echo -e "    \e[33m[WebSocket Payload]:\e[0m"
-                echo -e "    GET / HTTP/1.1[crlf]Host: $dom[crlf]Upgrade: websocket[crlf]Connection: Upgrade[crlf][crlf]"
-                echo -e "    \e[33m[SSL/TLS Direct Payload]:\e[0m"
-                echo -e "    CONNECT [host_port] HTTP/1.1[crlf]Host: $dom[crlf][crlf]"
+                echo -e "    \e[33m[WebSocket Payload (Port 80 Non-TLS)]:\e[0m"
+                echo -e "    GET /ssh-ws HTTP/1.1[crlf]Host: $dom[crlf]Upgrade: websocket[crlf]Connection: Upgrade[crlf][crlf]"
                 echo -e "\e[36m=================================================\e[0m"
             fi
             ;;
