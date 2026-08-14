@@ -311,9 +311,9 @@ iptables -t nat -F
 iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
 
 rm -rf /usr/local/go /tmp/go.tar.gz /tmp/dnstt /usr/local/bin/dnstt-server
-wget -O /tmp/go.tar.gz https://dl.google.com/go/go1.22.5.linux-amd64.tar.gz
+wget -O /tmp/go.tar.gz https://dl.google.com/go/go1.26.6.linux-amd64.tar.gz
 if [ $? -ne 0 ]; then
-    wget -O /tmp/go.tar.gz https://golang.org/dl/go1.22.5.linux-amd64.tar.gz
+    wget -O /tmp/go.tar.gz https://go.dev/dl/go1.26.6.linux-amd64.tar.gz
 fi
 
 tar -C /usr/local -xzf /tmp/go.tar.gz
