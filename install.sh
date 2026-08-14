@@ -87,11 +87,11 @@ cat << "EOF" > /etc/xray/config.json
             "settings": {
                 "clients": [
                     {
-                        "id": "b831381d-6324-4d53-ad4f-8cda48b30811",
-                        "flow": "xtls-rprx-direct"
+                        "id": "b831381d-6324-4d53-ad4f-8cda48b30811"
                     }
                 ],
-                "encryption": "none"
+                "encryption": "none",
+                "decryption": "none"
             },
             "streamSettings": {
                 "network": "ws",
@@ -157,6 +157,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /vless {
         proxy_pass http://127.0.0.1:10002;
@@ -164,6 +166,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /trojan {
         proxy_pass http://127.0.0.1:10003;
@@ -171,6 +175,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location / {
         proxy_pass http://127.0.0.1:10001;
@@ -197,6 +203,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /vmess {
         proxy_pass http://127.0.0.1:10001;
@@ -204,6 +212,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /vless {
         proxy_pass http://127.0.0.1:10002;
@@ -211,6 +221,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /trojan {
         proxy_pass http://127.0.0.1:10003;
@@ -218,6 +230,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location / {
         proxy_pass http://127.0.0.1:10001;
@@ -404,9 +418,6 @@ systemctl enable ws-proxy
 systemctl restart ws-proxy
 # ---------------------------------------------------------
 
-
-
-
 # 11. Install global menu shortcut
 if [ -f "menu.sh" ]; then
     cp -f menu.sh /usr/local/bin/menu
@@ -418,8 +429,8 @@ fi
 # 12. Test configuration syntax and start all services cleanly
 echo "[INFO] Enabling and restarting all backend services..."
 xray run -test -config /etc/xray/config.json
-systemctl enable nginx xray slowdns stunnel4 2>/dev/null
-nginx -t && systemctl restart nginx xray slowdns stunnel4 2>/dev/null
+systemctl enable nginx xray slowdns stunnel4 ws-proxy 2>/dev/null
+nginx -t && systemctl restart nginx xray slowdns stunnel4 ws-proxy 2>/dev/null
 
 echo "--------------------------------------------------"
 echo " INSTALL & SSL REGISTRATION COMPLETE!             "
@@ -430,4 +441,4 @@ systemctl is-active slowdns
 echo -e "\nYOUR SLOWDNS NAMESERVER ($NS_DOMAIN):"
 echo -e "YOUR SLOWDNS PUBLIC KEY:"
 cat /etc/slowdns/server.key.pub
-echo "--------------------------------------------------\n"
+echo -e "--------------------------------------------------\n"
