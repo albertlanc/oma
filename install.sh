@@ -143,7 +143,7 @@ if ! command -v xray &> /dev/null; then
     bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
 fi
 
-# 6. Configure UFW firewall rules (8080 removed)
+# 6. Configure UFW firewall rules
 echo "[INFO] Configuring firewall rules..."
 ufw allow 22/tcp 2>/dev/null
 ufw allow 80/tcp 2>/dev/null
@@ -151,10 +151,10 @@ ufw allow 443/tcp 2>/dev/null
 ufw allow 53/udp 2>/dev/null
 ufw --force enable 2>/dev/null
 
-# 6.5 Remove conflicting default Nginx site to prevent traffic interception
+# 6.5 Remove conflicting default Nginx site
 rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 
-# 7. Apply master Nginx reverse proxy configuration (NoTLS strictly on 80)
+# 7. Apply master Nginx reverse proxy configuration
 echo "[INFO] Applying master Nginx reverse proxy configuration..."
 cat << "EOF" > /etc/nginx/conf.d/master_vpn.conf
 server {
@@ -311,10 +311,26 @@ iptables -t nat -F
 iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
 
 rm -rf /usr/local/go /tmp/go.tar.gz /tmp/dnstt /usr/local/bin/dnstt-server
-wget -O /tmp/go.tar.gz https://dl.google.com/go/go1.26.6.linux-amd64.tar.gz
-if [ $? -ne 0 ]; then
-    wget -O /tmp/go.tar.gz https://go.dev/dl/go1.26.6.linux-amd64.tar.gz
+
+# Dynamic & Fail-Safe Go Toolchain Downloader
+GO_TAR_URL=""
+LATEST_GO=$(curl -s "https://go.dev/VERSION?m=text" | head -n1)
+if [[ "$LATEST_GO" =~ ^go[0-9]+(\.[0-9]+)+$ ]]; then
+    if curl --head --silent --fail "https://go.dev/dl/${LATEST_GO}.linux-amd64.tar.gz" >/dev/null; then
+        GO_TAR_URL="https://go.dev/dl/${LATEST_GO}.linux-amd64.tar.gz"
+    fi
 fi
+
+if [ -z "$GO_TAR_URL" ]; then
+    if curl --head --silent --fail "https://go.dev/dl/go1.26.5.linux-amd64.tar.gz" >/dev/null; then
+        GO_TAR_URL="https://go.dev/dl/go1.26.5.linux-amd64.tar.gz"
+    else
+        GO_TAR_URL="https://go.dev/dl/go1.26.0.linux-amd64.tar.gz"
+    fi
+fi
+
+echo "[INFO] Fetching Go binary package from: $GO_TAR_URL"
+wget -O /tmp/go.tar.gz "$GO_TAR_URL"
 
 tar -C /usr/local -xzf /tmp/go.tar.gz
 export PATH=/usr/local/go/bin:$PATH
