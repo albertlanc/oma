@@ -21,11 +21,11 @@ fi
 # 2. Make sure all module scripts are fully executable
 chmod +x modules/*.sh 2>/dev/null
 
-# 3. Interactive Domain & Nameserver Configuration
-mkdir -p /etc/xray
+# 3. Interactive Domain & Nameserver Configuration (Multi-path sync fix applied)
+mkdir -p /etc/xray /var/lib/premium-script /root
 if [ -n "$1" ]; then
-    echo "$1" > /etc/xray/domain
-    echo "[INFO] Domain overwritten via argument: $1"
+    INPUT_DOMAIN="$1"
+    echo "[INFO] Domain overwritten via argument: $INPUT_DOMAIN"
 else
     echo "--------------------------------------------------"
     echo "       DOMAIN & NAMESERVER CONFIGURATION          "
@@ -35,24 +35,29 @@ else
         echo "[ERROR] Domain cannot be empty. Exiting."
         exit 1
     fi
-    echo "$INPUT_DOMAIN" > /etc/xray/domain
 fi
 
-DOMAIN=$(cat /etc/xray/domain)
+# Save domain to all possible menu lookup paths instantly
+echo "$INPUT_DOMAIN" > /etc/xray/domain
+echo "$INPUT_DOMAIN" > /root/domain
+echo "IP=$INPUT_DOMAIN" > /var/lib/premium-script/ipvps.conf
+DOMAIN="$INPUT_DOMAIN"
 echo "[INFO] Configured Active Domain: $DOMAIN"
 
 if [ -n "$2" ]; then
-    echo "$2" > /etc/xray/ns-domain
+    INPUT_NS="$2"
 else
     read -p "Enter your SlowDNS nameserver subdomain (e.g., ns.$DOMAIN or ns-ter.$DOMAIN): " INPUT_NS
     if [ -z "$INPUT_NS" ]; then
         INPUT_NS="ns-$DOMAIN"
         echo "[WARNING] No nameserver entered. Defaulting to: $INPUT_NS"
     fi
-    echo "$INPUT_NS" > /etc/xray/ns-domain
 fi
 
-NS_DOMAIN=$(cat /etc/xray/ns-domain)
+# Save nameserver to all possible menu lookup paths instantly
+echo "$INPUT_NS" > /etc/xray/ns-domain
+echo "$INPUT_NS" > /root/nsdomain
+NS_DOMAIN="$INPUT_NS"
 echo "[INFO] Configured Nameserver Domain: $NS_DOMAIN"
 
 # 4. Write a clean, modern, fully compatible X-ray JSON config
@@ -140,6 +145,9 @@ ufw allow 443/tcp 2>/dev/null
 ufw allow 8080/tcp 2>/dev/null
 ufw allow 53/udp 2>/dev/null
 ufw --force enable 2>/dev/null
+
+# 6.5 Remove conflicting default Nginx site to prevent traffic interception
+rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 
 # 7. Apply master Nginx reverse proxy configuration
 echo "[INFO] Applying master Nginx reverse proxy configuration..."
@@ -278,7 +286,7 @@ else:
 EOF
 chmod +x /usr/local/bin/xray-add-client
 
-# 9. Set up SlowDNS and compile dnstt-server (with Ubuntu 24 netfilter compatibility)
+# 9. Set up SlowDNS and compile dnstt-server (with robust Go fallback)
 echo "[INFO] Setting up SlowDNS and building dnstt-server..."
 systemctl stop systemd-resolved 2>/dev/null
 systemctl disable systemd-resolved 2>/dev/null
@@ -291,7 +299,11 @@ iptables -t nat -F
 iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
 
 rm -rf /usr/local/go /tmp/go.tar.gz /tmp/dnstt /usr/local/bin/dnstt-server
-wget -O /tmp/go.tar.gz https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
+wget -O /tmp/go.tar.gz https://dl.google.com/go/go1.22.5.linux-amd64.tar.gz
+if [ $? -ne 0 ]; then
+    wget -O /tmp/go.tar.gz https://golang.org/dl/go1.22.5.linux-amd64.tar.gz
+fi
+
 tar -C /usr/local -xzf /tmp/go.tar.gz
 export PATH=/usr/local/go/bin:$PATH
 
@@ -333,7 +345,7 @@ if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     ln -sf /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/xray/xray.crt
     ln -sf /etc/letsencrypt/live/$DOMAIN/privkey.pem /etc/xray/xray.key
 else
-    echo "[WARNING] Let's Encrypt failed. Falling back to self-signed SSL for $DOMAIN..."
+    echo "[WARNING] Let's Encrypt failed or IP was used. Falling back to self-signed SSL for $DOMAIN..."
     openssl req -x509 -nodes -days 365 -newkey rsa:2056 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/CN=$DOMAIN" 2>/dev/null
 fi
 systemctl start nginx 2>/dev/null
@@ -343,18 +355,17 @@ systemctl start nginx 2>/dev/null
 # ---------------------------------------------------------
 echo "[INFO] Syncing backend variables with frontend dashboard..."
 
-# A. Sync Domain and Nameserver to common dashboard paths
-mkdir -p /var/lib/premium-script
+mkdir -p /var/lib/premium-script /root /etc/xray
 echo "IP=$DOMAIN" > /var/lib/premium-script/ipvps.conf
 echo "$DOMAIN" > /root/domain
+echo "$DOMAIN" > /etc/xray/domain
 echo "$NS_DOMAIN" > /root/nsdomain
+echo "$NS_DOMAIN" > /etc/xray/ns-domain
 
-# B. Sync SlowDNS Public Key to common dashboard paths
 cp /etc/slowdns/server.key.pub /etc/slowdns/server.pub 2>/dev/null
 cp /etc/slowdns/server.key.pub /root/slowdns.pub 2>/dev/null
 cp /etc/slowdns/server.key.pub /etc/slowdns/pub.key 2>/dev/null
 
-# C. Build and Enable the missing SSH-WS (WebSocket) Proxy on Port 10015
 echo "[INFO] Building SSH-WS Python Proxy..."
 cat << 'EOF' > /usr/local/bin/ws-proxy.py
 import socket, threading, sys
@@ -362,9 +373,7 @@ import socket, threading, sys
 def handle_client(client_socket):
     target_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        target_socket.connect(('127.0.0.1', 22)) # Forward to local SSH
-        
-        # Strip the HTTP WebSocket handshake headers from the client
+        target_socket.connect(('127.0.0.1', 22))
         request = client_socket.recv(4096)
         if b"HTTP/" in request:
             response = b"HTTP/1.1 101 Switching Protocols\r\n" \
@@ -396,7 +405,6 @@ EOF
 
 chmod +x /usr/local/bin/ws-proxy.py
 
-# D. Create Systemd Service for the SSH-WS Proxy
 cat << 'EOF' > /etc/systemd/system/ws-proxy.service
 [Unit]
 Description=Python SSH-WebSocket Proxy (Port 10015)
