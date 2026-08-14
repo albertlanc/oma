@@ -1,0 +1,83 @@
+#!/bin/bash
+# Standalone DNSTT Server Protocol Installer
+
+if [ "$EUID" -ne 0 ]; then
+    echo "[ERROR] Please run this script as root."
+    exit 1
+fi
+
+clear
+echo "--------------------------------------------------"
+echo "          STANDALONE SLOWDNS (DNSTT) SETUP        "
+echo "--------------------------------------------------"
+read -p "Enter your NameServer Domain (e.g., ns-tep.gregsmarty.co.uk): " NS_DOMAIN
+
+if [ -z "$NS_DOMAIN" ]; then
+    echo "[ERROR] Nameserver domain cannot be empty. Aborting."
+    exit 1
+fi
+
+# Save lookup path
+mkdir -p /root /etc/slowdns
+echo "$NS_DOMAIN" > /root/nsdomain
+echo "$NS_DOMAIN" > /etc/slowdns/ns-domain
+
+echo "[INFO] Installing build prerequisites..."
+apt-get update -y >/dev/null 2>&1
+apt-get install -y wget git build-essential iptables golang >/dev/null 2>&1
+
+# Compile dnstt-server natively using Go
+echo "[INFO] Compiling dnstt-server from source..."
+rm -rf /tmp/dnstt
+git clone https://www.bamsoftware.com/git/dnstt.git /tmp/dnstt >/dev/null 2>&1
+cd /tmp/dnstt/dnstt-server
+go build -o /usr/local/bin/dnstt-server
+chmod +x /usr/local/bin/dnstt-server
+
+# Generate Cryptographic Keys
+echo "[INFO] Generating SlowDNS cryptographic keys..."
+rm -f /etc/slowdns/server.key /etc/slowdns/server.key.pub
+/usr/local/bin/dnstt-server -gen-key -privkey-file /etc/slowdns/server.key -pubkey-file /etc/slowdns/server.key.pub
+chmod 600 /etc/slowdns/server.key
+chmod 644 /etc/slowdns/server.key.pub
+
+# Disable systemd-resolved to free port 53 and configure iptables NAT
+echo "[INFO] Configuring network ports and IPTables redirection..."
+systemctl stop systemd-resolved >/dev/null 2>&1
+systemctl disable systemd-resolved >/dev/null 2>&1
+modprobe ip_tables 2>/dev/null
+modprobe iptable_nat 2>/dev/null
+iptables -t nat -F
+iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
+
+# Create Systemd Service with mandatory Nameserver argument
+cat << EOF > /etc/systemd/system/slowdns.service
+[Unit]
+Description=Standalone SlowDNS Server (DNSTT)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/slowdns
+ExecStart=/usr/local/bin/dnstt-server -udp :5300 -privkey-file /etc/slowdns/server.key $NS_DOMAIN 127.0.0.1:22
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable slowdns >/dev/null 2>&1
+systemctl restart slowdns
+
+echo "--------------------------------------------------"
+echo " SLOWDNS SETUP COMPLETE SUCCESSFULLY!             "
+echo "--------------------------------------------------"
+echo -e "\nYOUR NAMESERVER: \e[32m$NS_DOMAIN\e[0m"
+echo -e "\nCOPY THIS EXACT PUBLIC KEY FOR YOUR SSH APP:"
+echo -e "\e[33m"
+cat /etc/slowdns/server.key.pub
+echo -e "\e[0m"
+echo "--------------------------------------------------"
