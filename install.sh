@@ -25,10 +25,11 @@ if [ ! -f /swapfile ] && [ $(free -m | awk '/Mem:/ {print $2}') -lt 1500 ]; then
 fi
 
 # 2. Make sure all module scripts are fully executable
+mkdir -p /root/oma/modules
 chmod +x modules/*.sh 2>/dev/null
 
 # 3. Interactive Domain & Nameserver Configuration
-mkdir -p /etc/xray /var/lib/premium-script /root
+mkdir -p /etc/xray /var/lib/premium-script /root /root/oma
 if [ -n "$1" ]; then
     INPUT_DOMAIN="$1"
     echo "[INFO] Domain overwritten via argument: $INPUT_DOMAIN"
@@ -46,6 +47,7 @@ fi
 # Save domain to all possible menu lookup paths instantly
 echo "$INPUT_DOMAIN" > /etc/xray/domain
 echo "$INPUT_DOMAIN" > /root/domain
+echo "$INPUT_DOMAIN" > /root/oma/domain
 echo "IP=$INPUT_DOMAIN" > /var/lib/premium-script/ipvps.conf
 DOMAIN="$INPUT_DOMAIN"
 echo "[INFO] Configured Active Domain: $DOMAIN"
@@ -63,6 +65,7 @@ fi
 # Save nameserver to all possible menu lookup paths instantly
 echo "$INPUT_NS" > /etc/xray/ns-domain
 echo "$INPUT_NS" > /root/nsdomain
+echo "$INPUT_NS" > /root/oma/nsdomain
 NS_DOMAIN="$INPUT_NS"
 echo "[INFO] Configured Nameserver Domain: $NS_DOMAIN"
 
@@ -346,11 +349,13 @@ systemctl start nginx 2>/dev/null
 # ---------------------------------------------------------
 echo "[INFO] Syncing backend variables with frontend dashboard..."
 
-mkdir -p /var/lib/premium-script /root /etc/xray
+mkdir -p /var/lib/premium-script /root /etc/xray /root/oma
 echo "IP=$DOMAIN" > /var/lib/premium-script/ipvps.conf
 echo "$DOMAIN" > /root/domain
+echo "$DOMAIN" > /root/oma/domain
 echo "$DOMAIN" > /etc/xray/domain
 echo "$NS_DOMAIN" > /root/nsdomain
+echo "$NS_DOMAIN" > /root/oma/nsdomain
 echo "$NS_DOMAIN" > /etc/xray/ns-domain
 
 cp /etc/slowdns/server.key.pub /etc/slowdns/server.pub 2>/dev/null
@@ -424,6 +429,44 @@ if [ -f "menu.sh" ]; then
     chmod +x /usr/local/bin/menu /usr/bin/menu
     echo "[INFO] Global 'menu' shortcut installed successfully."
 fi
+
+# 11.5 Generating Diagnostic Modules
+echo "[INFO] Installing diagnostic modules (status.sh)..."
+cat << "EOF" > /root/oma/modules/status.sh
+#!/bin/bash
+# status.sh - Service Status Monitor
+
+# Color Variables
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+YELLOW='\e[1;33m'
+NC='\e[0m'
+
+echo -e "${YELLOW}==================================================${NC}"
+echo -e "           SYSTEM SERVICES STATUS                 "
+echo -e "${YELLOW}==================================================${NC}"
+
+check_service() {
+    if systemctl is-active --quiet "$1"; then
+        echo -e " $2: ${GREEN}Active (Running)${NC}"
+    else
+        echo -e " $2: ${RED}Inactive (Stopped/Failed)${NC}"
+    fi
+}
+
+# Check all backend services configured by install.sh
+check_service "sshd"       "SSH Server       "
+check_service "nginx"      "Nginx Web Server "
+check_service "xray"       "Xray Core        "
+check_service "slowdns"    "SlowDNS (DNSTT)  "
+check_service "ws-proxy"   "SSH-WS Proxy     "
+check_service "stunnel4"   "Stunnel4 TLS     "
+
+echo -e "${YELLOW}==================================================${NC}"
+echo ""
+read -p "Press Enter to return to menu..."
+EOF
+chmod +x /root/oma/modules/status.sh
 
 # 12. Test configuration syntax and start all services cleanly
 echo "[INFO] Enabling and restarting all backend services..."
