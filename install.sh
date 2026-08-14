@@ -1,9 +1,15 @@
 #!/bin/bash
 export DEBIAN_FRONTEND=noninteractive
 
-# 0. Check for root privileges
+# 0. Strict OS & Root Check
 if [ "$EUID" -ne 0 ]; then
     echo "[ERROR] Please run this script as root (sudo bash install.sh)."
+    exit 1
+fi
+
+source /etc/os-release
+if [[ "$ID" != "ubuntu" || "$VERSION_ID" != "24.04" ]]; then
+    echo -e "\e[31m[ERROR] This script is strictly built for Ubuntu 24.04. Installation aborted.\e[0m"
     exit 1
 fi
 
@@ -21,7 +27,7 @@ fi
 # 2. Make sure all module scripts are fully executable
 chmod +x modules/*.sh 2>/dev/null
 
-# 3. Interactive Domain & Nameserver Configuration (Multi-path sync fix applied)
+# 3. Interactive Domain & Nameserver Configuration
 mkdir -p /etc/xray /var/lib/premium-script /root
 if [ -n "$1" ]; then
     INPUT_DOMAIN="$1"
@@ -47,7 +53,7 @@ echo "[INFO] Configured Active Domain: $DOMAIN"
 if [ -n "$2" ]; then
     INPUT_NS="$2"
 else
-    read -p "Enter your SlowDNS nameserver subdomain (e.g., ns.$DOMAIN or ns-ter.$DOMAIN): " INPUT_NS
+    read -p "Enter your SlowDNS nameserver subdomain (e.g., ns.$DOMAIN): " INPUT_NS
     if [ -z "$INPUT_NS" ]; then
         INPUT_NS="ns-$DOMAIN"
         echo "[WARNING] No nameserver entered. Defaulting to: $INPUT_NS"
@@ -137,28 +143,34 @@ if ! command -v xray &> /dev/null; then
     bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
 fi
 
-# 6. Configure UFW firewall rules
+# 6. Configure UFW firewall rules (8080 removed)
 echo "[INFO] Configuring firewall rules..."
 ufw allow 22/tcp 2>/dev/null
 ufw allow 80/tcp 2>/dev/null
 ufw allow 443/tcp 2>/dev/null
-ufw allow 8080/tcp 2>/dev/null
 ufw allow 53/udp 2>/dev/null
 ufw --force enable 2>/dev/null
 
 # 6.5 Remove conflicting default Nginx site to prevent traffic interception
 rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 
-# 7. Apply master Nginx reverse proxy configuration
+# 7. Apply master Nginx reverse proxy configuration (NoTLS strictly on 80)
 echo "[INFO] Applying master Nginx reverse proxy configuration..."
 cat << "EOF" > /etc/nginx/conf.d/master_vpn.conf
 server {
     listen 80;
     listen [::]:80;
-    listen 8080;
-    listen [::]:8080;
     server_name _;
 
+    location = /ssh-ws {
+        proxy_pass http://127.0.0.1:10015;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
     location /vmess {
         proxy_pass http://127.0.0.1:10001;
         proxy_http_version 1.1;
@@ -286,7 +298,7 @@ else:
 EOF
 chmod +x /usr/local/bin/xray-add-client
 
-# 9. Set up SlowDNS and compile dnstt-server (with robust Go fallback)
+# 9. Set up SlowDNS and compile dnstt-server
 echo "[INFO] Setting up SlowDNS and building dnstt-server..."
 systemctl stop systemd-resolved 2>/dev/null
 systemctl disable systemd-resolved 2>/dev/null
@@ -336,7 +348,7 @@ systemctl daemon-reload
 systemctl enable slowdns
 systemctl restart slowdns
 
-# 10. Automatically Issue SSL Certificate via Certbot matching backend domain variables
+# 10. Automatically Issue SSL Certificate via Certbot
 echo "[INFO] Automatically requesting and registering SSL Certificate via Certbot for $DOMAIN..."
 systemctl stop nginx 2>/dev/null
 certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null
@@ -345,7 +357,7 @@ if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     ln -sf /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/xray/xray.crt
     ln -sf /etc/letsencrypt/live/$DOMAIN/privkey.pem /etc/xray/xray.key
 else
-    echo "[WARNING] Let's Encrypt failed or IP was used. Falling back to self-signed SSL for $DOMAIN..."
+    echo "[WARNING] Let's Encrypt failed. Falling back to self-signed SSL for $DOMAIN..."
     openssl req -x509 -nodes -days 365 -newkey rsa:2056 -keyout /etc/xray/xray.key -out /etc/xray/xray.crt -subj "/CN=$DOMAIN" 2>/dev/null
 fi
 systemctl start nginx 2>/dev/null
