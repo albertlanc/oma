@@ -32,6 +32,12 @@ while true; do
         [ -n "$IP" ] && ACTIVE_DOMAIN="$IP"
     fi
     
+    # Retrieve SlowDNS PubKey to make visible for SSH Manager creation
+    SLOWDNS_PUB="Not Found"
+    if [ -f /etc/slowdns/server.key.pub ]; then
+        SLOWDNS_PUB=$(cat /etc/slowdns/server.key.pub)
+    fi
+
     # Generate graphical RAM progress bar (8 blocks max)
     FILLED=$((RAM_PCT * 8 / 100))
     EMPTY=$((8 - FILLED))
@@ -61,6 +67,7 @@ while true; do
     echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
     echo -e "${CYAN}│${NC} Host   : ${GREEN}$HOST_IP${NC}"
     echo -e "${CYAN}│${NC} Domain : ${GREEN}$ACTIVE_DOMAIN${NC}"
+    echo -e "${CYAN}│${NC} PubKey : ${YELLOW}$SLOWDNS_PUB${NC}"
     echo -e "${CYAN}│${NC} Up     : ${GREEN}$UPTIME${NC}"
     echo -e "${CYAN}│${NC} RAM    : [${GREEN}${BAR}${NC}] ${YELLOW}${RAM_PCT}%${NC} (${RAM_USED}MB/${RAM_TOTAL}MB)"
     echo -e "${CYAN}│${NC} SVC    : Xray:[$XRAY_STATUS] Nginx:[$NGINX_STATUS] SSH:[$SSH_STATUS]"
@@ -147,8 +154,8 @@ while true; do
             fi
             ;;
         11)
-            systemctl restart xray nginx
-            echo -e "${GREEN}[✓] Xray & Nginx Restarted Successfully!${NC}"
+            systemctl restart xray nginx ws-proxy
+            echo -e "${GREEN}[✓] Xray, Nginx & SSHWS Restarted Successfully!${NC}"
             sleep 1.5
             ;;
         0|00)
