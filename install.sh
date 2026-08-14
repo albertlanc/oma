@@ -324,6 +324,89 @@ else
 fi
 systemctl start nginx 2>/dev/null
 
+# ---------------------------------------------------------
+# 10.5 INTEGRATION & DASHBOARD COMPATIBILITY FIXES
+# ---------------------------------------------------------
+echo "[INFO] Syncing backend variables with frontend dashboard..."
+
+# A. Sync Domain and Nameserver to common dashboard paths
+mkdir -p /var/lib/premium-script
+echo "IP=$DOMAIN" > /var/lib/premium-script/ipvps.conf
+echo "$DOMAIN" > /root/domain
+echo "$NS_DOMAIN" > /root/nsdomain
+
+# B. Sync SlowDNS Public Key to common dashboard paths
+cp /etc/slowdns/server.key.pub /etc/slowdns/server.pub 2>/dev/null
+cp /etc/slowdns/server.key.pub /root/slowdns.pub 2>/dev/null
+cp /etc/slowdns/server.key.pub /etc/slowdns/pub.key 2>/dev/null
+
+# C. Build and Enable the missing SSH-WS (WebSocket) Proxy on Port 10015
+echo "[INFO] Building SSH-WS Python Proxy..."
+cat << 'EOF' > /usr/local/bin/ws-proxy.py
+import socket, threading, sys
+
+def handle_client(client_socket):
+    target_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        target_socket.connect(('127.0.0.1', 22)) # Forward to local SSH
+        
+        # Strip the HTTP WebSocket handshake headers from the client
+        request = client_socket.recv(4096)
+        if b"HTTP/" in request:
+            response = b"HTTP/1.1 101 Switching Protocols\r\n" \
+                       b"Upgrade: websocket\r\n" \
+                       b"Connection: Upgrade\r\n\r\n"
+            client_socket.sendall(response)
+            
+        def forward(src, dst):
+            try:
+                while True:
+                    data = src.recv(4096)
+                    if not data: break
+                    dst.sendall(data)
+            except: pass
+            
+        threading.Thread(target=forward, args=(client_socket, target_socket)).start()
+        threading.Thread(target=forward, args=(target_socket, client_socket)).start()
+    except:
+        client_socket.close()
+
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(('127.0.0.1', 10015))
+server.listen(100)
+while True:
+    client, addr = server.accept()
+    threading.Thread(target=handle_client, args=(client,)).start()
+EOF
+
+chmod +x /usr/local/bin/ws-proxy.py
+
+# D. Create Systemd Service for the SSH-WS Proxy
+cat << 'EOF' > /etc/systemd/system/ws-proxy.service
+[Unit]
+Description=Python SSH-WebSocket Proxy (Port 10015)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /usr/local/bin/ws-proxy.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable ws-proxy
+systemctl restart ws-proxy
+# ---------------------------------------------------------
+
+
+
+
 # 11. Install global menu shortcut
 if [ -f "menu.sh" ]; then
     cp -f menu.sh /usr/local/bin/menu
