@@ -136,7 +136,7 @@ EOF
 # 5. Install base dependencies, Stunnel, and official X-ray core binary
 echo "[INFO] Installing required core packages & Stunnel..."
 apt-get update -y
-apt-get install -y curl wget jq git nginx certbot ufw python3 iptables stunnel4
+apt-get install -y curl wget jq git nginx certbot ufw python3 iptables stunnel4 golang
 
 if ! command -v xray &> /dev/null; then
     echo "[INFO] Installing official X-ray core..."
@@ -177,8 +177,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /vless {
         proxy_pass http://127.0.0.1:10002;
@@ -186,8 +184,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /trojan {
         proxy_pass http://127.0.0.1:10003;
@@ -195,8 +191,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location / {
         proxy_pass http://127.0.0.1:10001;
@@ -223,8 +217,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /vmess {
         proxy_pass http://127.0.0.1:10001;
@@ -232,8 +224,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /vless {
         proxy_pass http://127.0.0.1:10002;
@@ -241,8 +231,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /trojan {
         proxy_pass http://127.0.0.1:10003;
@@ -250,8 +238,6 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $http_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location / {
         proxy_pass http://127.0.0.1:10001;
@@ -298,8 +284,8 @@ else:
 EOF
 chmod +x /usr/local/bin/xray-add-client
 
-# 9. Set up SlowDNS and compile dnstt-server
-echo "[INFO] Setting up SlowDNS and building dnstt-server..."
+# 9. Set up SlowDNS and compile dnstt-server natively
+echo "[INFO] Setting up SlowDNS and building dnstt-server natively..."
 systemctl stop systemd-resolved 2>/dev/null
 systemctl disable systemd-resolved 2>/dev/null
 rm -f /etc/resolv.conf
@@ -310,34 +296,11 @@ modprobe iptable_nat 2>/dev/null
 iptables -t nat -F
 iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 5300
 
-rm -rf /usr/local/go /tmp/go.tar.gz /tmp/dnstt /usr/local/bin/dnstt-server
-
-# Dynamic & Fail-Safe Go Toolchain Downloader
-GO_TAR_URL=""
-LATEST_GO=$(curl -s "https://go.dev/VERSION?m=text" | head -n1)
-if [[ "$LATEST_GO" =~ ^go[0-9]+(\.[0-9]+)+$ ]]; then
-    if curl --head --silent --fail "https://go.dev/dl/${LATEST_GO}.linux-amd64.tar.gz" >/dev/null; then
-        GO_TAR_URL="https://go.dev/dl/${LATEST_GO}.linux-amd64.tar.gz"
-    fi
-fi
-
-if [ -z "$GO_TAR_URL" ]; then
-    if curl --head --silent --fail "https://go.dev/dl/go1.26.5.linux-amd64.tar.gz" >/dev/null; then
-        GO_TAR_URL="https://go.dev/dl/go1.26.5.linux-amd64.tar.gz"
-    else
-        GO_TAR_URL="https://go.dev/dl/go1.26.0.linux-amd64.tar.gz"
-    fi
-fi
-
-echo "[INFO] Fetching Go binary package from: $GO_TAR_URL"
-wget -O /tmp/go.tar.gz "$GO_TAR_URL"
-
-tar -C /usr/local -xzf /tmp/go.tar.gz
-export PATH=/usr/local/go/bin:$PATH
-
+# Native Go compilation using Ubuntu's official package
+rm -rf /tmp/dnstt /usr/local/bin/dnstt-server
 git clone https://www.bamsoftware.com/git/dnstt.git /tmp/dnstt
 cd /tmp/dnstt/dnstt-server
-/usr/local/go/bin/go build -o /usr/local/bin/dnstt-server
+go build -o /usr/local/bin/dnstt-server
 chmod +x /usr/local/bin/dnstt-server
 
 mkdir -p /etc/slowdns
@@ -476,5 +439,5 @@ echo -e "\nSlowDNS status:"
 systemctl is-active slowdns
 echo -e "\nYOUR SLOWDNS NAMESERVER ($NS_DOMAIN):"
 echo -e "YOUR SLOWDNS PUBLIC KEY:"
-cat /etc/slowdns/server.key.pub
+cat /etc/slowdns/server.key.pub 2>/dev/null
 echo -e "--------------------------------------------------\n"
